@@ -401,7 +401,7 @@ async def stream_player_question_exchange(
     raw = ""
     emitted = {field: "" for field in field_speakers}
     started: set[str] = set()
-    async for event in _grok_json_stream(instructions, context, "credit_tank_round_exchange", properties):
+    async for event in _grok_json_stream(instructions, context, "shrimp_tank_round_exchange", properties):
         if event["type"] == "content":
             raw += event["text"]
             partial = _partial_json_string_fields(raw, set(field_speakers))
@@ -435,13 +435,13 @@ async def player_question_exchange(
     if active_provider() != "xai":
         return _offline_player_exchange(pitch, round_number, founder_fact)
 
-    exchange = await _grok_json(instructions, context, "credit_tank_round_exchange", properties)
+    exchange = await _grok_json(instructions, context, "shrimp_tank_round_exchange", properties)
     _validate_exchange(exchange, (founder_fact, fact_for(pitch, topic)))
     return _complete_player_exchange(exchange, shark, next_shark, topic)
 
 
 async def table_exchange(pitch: dict, messages: list[dict], round_number: int, *, player_out: bool = False) -> dict:
-    """Generate the investors' continued discussion after the player exits."""
+    """Generate one concise investor-to-founder exchange while the player passes or exits."""
     shark, next_shark, topic, fallback_question = _turn_sharks(round_number)
     founder_fact = fact_for(pitch, topic)
     if active_provider() != "xai":
@@ -476,7 +476,7 @@ async def table_exchange(pitch: dict, messages: list[dict], round_number: int, *
             "next_investor": _shark_context(next_shark),
             "recent_dialogue": _recent_dialogue(messages),
         },
-        "credit_tank_table_exchange",
+        "shrimp_tank_table_exchange",
         {
             "shark_question": _line_schema(150),
             "founder_answer": _line_schema(260),

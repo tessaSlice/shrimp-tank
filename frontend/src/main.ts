@@ -2,10 +2,11 @@ import "./style.css";
 import type { Stage } from "./stage";
 
 type Message = { id: string; speaker: string; text: string; kind: string; round: number };
+type OfferDraft = { amount: number; rate: number; royalty: number; termMonths: number; secured: boolean };
 type GameState = {
   id: string; phase: string; difficulty: string; total_pitches: number; pitch_index: number; round: number; max_rounds: number;
   balance: number; starting_capital: number; pitch: any; messages: Message[]; disclosures: string[]; offers: any[];
-  sharks: any[]; question_asked: boolean; human_out: boolean; result: any; scorecard: any; crs_available: boolean; ai_mode: string;
+  sharks: any[]; question_asked: boolean; human_out: boolean; result: any; scorecard: any; ai_mode: string;
 };
 
 const ui = document.querySelector<HTMLElement>("#ui")!;
@@ -31,6 +32,8 @@ let game: GameState | null = null;
 let selectedDifficulty = "medium";
 let selectedPitchCount = 4;
 let busy = false;
+let offerEditorOpen = false;
+let offerDraft: OfferDraft | null = null;
 let readingUntil = 0;
 let toastTimer = 0;
 let speechTimer = 0;
@@ -174,7 +177,7 @@ function showPlayerSpeech(text: string) {
   if (bubble) bubble.hidden = !text;
 }
 
-function revealDialogue() {
+function showFullTranscript() {
   stopSpeech();
   if (game) {
     for (const message of game.messages) {
@@ -229,7 +232,8 @@ function playDialogue(messages: Message[]) {
     article.classList.add("speaking");
     body.textContent = "";
     const sharkIndex = game?.sharks.findIndex((shark: any) => shark.name === message.speaker) ?? -1;
-    stage?.setSpeaker(message.kind === "round" ? null : sharkIndex >= 0 ? sharkIndex + 1 : 0, "");
+    const speakerFirstName = message.speaker.trim().split(/\s+/)[0] || message.speaker;
+    stage?.setSpeaker(message.kind === "round" ? null : sharkIndex >= 0 ? sharkIndex + 1 : 0, "", speakerFirstName);
     announce(`${message.speaker} is speaking.`);
     transcript?.scrollTo({ top: transcript.scrollHeight, behavior: "smooth" });
     const glyphs = Array.from(message.text);
@@ -263,6 +267,8 @@ function playDialogue(messages: Message[]) {
 
 function renderLanding() {
   stopSpeech();
+  offerEditorOpen = false;
+  offerDraft = null;
   window.clearTimeout(readingTickTimer);
   readingUntil = 0;
   wasReadingLocked = false;
@@ -270,7 +276,7 @@ function renderLanding() {
   ui.innerHTML = `
     <div class="landing-shell">
       <header class="topbar">
-        <a class="brand" href="#" aria-label="The Credit Tank home"><span class="brand-mark">CT</span><span>THE CREDIT TANK<small>UNDERWRITING LAB</small></span></a>
+        <a class="brand" href="#" aria-label="Shrimp Tank home"><span class="brand-mark">ST</span><span>SHRIMP TANK<small>UNDERWRITING LAB</small></span></a>
         <div class="topbar-right"><span class="live-dot"></span><span>SIMULATION MODE</span><span class="topbar-divider"></span><span>01 / 01</span></div>
       </header>
       <section class="hero-layout">
@@ -301,7 +307,6 @@ function renderLanding() {
         </div>
         <div class="hero-scene" aria-hidden="true">
           <div class="scene-vignette"></div>
-          <div class="hero-kicker"><span class="kicker-index">01</span><span>THE BORROWER IS IN</span></div>
           <div class="hero-quote"><span class="quote-mark">“</span><p>I'm not asking you to believe in the idea. I'm asking you to look at the numbers.</p><span class="quote-credit">— A FOUNDER, SOMEWHERE IN THE TANK</span></div>
           <div class="hero-floor-label">THE DECISION IS YOURS <span>◆</span></div>
         </div>
@@ -321,6 +326,8 @@ function renderLanding() {
 
 async function startGame() {
   if (busy) return;
+  offerEditorOpen = false;
+  offerDraft = null;
   const button = document.querySelector<HTMLButtonElement>("#start-game") || document.querySelector<HTMLButtonElement>("#play-again");
   busy = true;
   if (button) { button.disabled = true; button.innerHTML = "<span>PREPARING THE TANK…</span><span class=\"spinner\"></span>"; }
@@ -333,7 +340,7 @@ async function startGame() {
       cutscene.setAttribute("aria-label", "Opening cutscene");
       cutscene.innerHTML = `
         <div id="cutscene-stage" class="cutscene-stage" aria-hidden="true"></div>
-        <div class="cutscene-topline" aria-live="polite"><span>THE CREDIT TANK · OPENING SEQUENCE</span><b id="cutscene-shot">CAM 01 · BACKSTAGE ENTRY</b></div>
+        <div class="cutscene-topline" aria-live="polite"><span>SHRIMP TANK · OPENING SEQUENCE</span><b id="cutscene-shot">CAM 01 · BACKSTAGE ENTRY</b></div>
         <div class="cutscene-bottomline"><span id="cutscene-caption">THE PRESENTER IS ENTERING THE HALLWAY</span><button type="button" id="skip-intro" class="skip-intro">SKIP CUTSCENE <span>↗</span></button></div>
         <p class="sr-only">The presenter enters through backstage doors, walks down the hallway, and comes onto the stage. You can skip the cutscene.</p>`;
       ui.append(cutscene);
@@ -360,7 +367,6 @@ async function startGame() {
     game = await api<GameState>("/api/sessions", { method: "POST", body: JSON.stringify({ total_pitches: selectedPitchCount, difficulty: selectedDifficulty }) });
     cutscene?.remove();
     localStorage.setItem("credit-tank-session", game.id);
-    localStorage.removeItem(`credit-tank-notes-${game.id}`);
     holdForDialogue(game.messages);
     stage?.setPitch(game.pitch.archetype, game.pitch.company);
     busy = false;
@@ -377,7 +383,6 @@ function displayReadingLock() {
   window.clearTimeout(readingTickTimer);
   const controls = document.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>(".turn-control");
   const label = document.querySelector<HTMLElement>("#reading-label");
-  const skip = document.querySelector<HTMLButtonElement>("#skip-dialogue");
   const reveal = document.querySelector<HTMLButtonElement>("#reveal-decision");
   const tick = () => {
     const remaining = Math.max(0, readingUntil - Date.now());
@@ -388,10 +393,6 @@ function displayReadingLock() {
       control.disabled = busy || ownDisabled || remaining > 0 || conversationLocked;
     });
     if (label) label.textContent = remaining > 0 ? `READ THE ROOM · ${Math.ceil(remaining / 1000)}s` : conversationLocked ? "HEAR THE FULL TABLE" : "YOUR MOVE";
-    if (skip) {
-      skip.hidden = busy || (remaining <= 0 && !speechActive);
-      skip.textContent = speechActive ? "SHOW ALL ↗" : "CONTINUE ↗";
-    }
     if (reveal) {
       const readyToReveal = remaining <= 0 && !speechActive;
       reveal.textContent = readyToReveal ? "REVEAL FOUNDER'S DECISION ↗" : "SHOW TRANSCRIPT & REVEAL DECISION ↗";
@@ -403,6 +404,17 @@ function displayReadingLock() {
   tick();
 }
 
+function readOfferDraft(): OfferDraft | null {
+  if (!game) return null;
+  return {
+    amount: Number(document.querySelector<HTMLInputElement>("#offer-amount")?.value ?? game.pitch.ask_amount),
+    rate: Number(document.querySelector<HTMLInputElement>("#offer-rate")?.value ?? game.pitch.opening_rate),
+    royalty: Number(document.querySelector<HTMLInputElement>("#offer-royalty")?.value ?? 0),
+    termMonths: Number(document.querySelector<HTMLSelectElement>("#offer-term")?.value ?? 36),
+    secured: Boolean(document.querySelector<HTMLInputElement>("#offer-secured")?.checked),
+  };
+}
+
 function renderGame(animateMessages: Message[] = []) {
   stopSpeech();
   if (!game) return;
@@ -410,23 +422,46 @@ function renderGame(animateMessages: Message[] = []) {
   if (game.phase === "complete") { renderScorecard(); return; }
   if (game.phase === "pitch_result") { renderPitchResult(); return; }
   const incomingIds = new Set(reducedMotion.matches ? [] : animateMessages.filter((message) => message.kind !== "question").map((message) => message.id));
-  const notesKey = `credit-tank-notes-${game.id}-${game.pitch.id}`;
-  const notes = localStorage.getItem(notesKey) || "";
   const aiBadge = game.ai_mode === "offline" ? "GROK KEY NEEDED" : "GROK LIVE DIALOGUE";
-  const personaNote = game.ai_mode === "offline"
-    ? "Offline dialogue · add GROK_API_KEY to the backend environment for live investor turns."
-    : "Grok-generated dialogue · fictionalized investor profiles with distinct business lenses.";
-  const messages = game.messages.map((message) => `
-    <article id="message-${esc(message.id)}" role="group" aria-label="${esc(`${message.speaker}: ${message.text}`)}" class="message ${message.kind === "question" ? "from-you" : message.kind === "shark_question" || message.kind === "offer" ? "from-shark" : message.kind === "round" ? "stage-message" : "from-founder"} ${incomingIds.has(message.id) ? "pending-message" : ""}">
-      ${message.kind === "round" ? `<p class="stage-message-text">${incomingIds.has(message.id) ? "" : esc(message.text)}</p>` : `<div class="message-meta"><span class="speaker">${esc(message.speaker)}</span><span class="message-round">ROUND ${String(message.round).padStart(2, "0")}</span></div><p class="message-text">${incomingIds.has(message.id) ? "" : esc(message.text)}</p>`}
-    </article>`).join("");
+  const messages = game.messages.map((message) => {
+    const investor = game!.sharks.find((shark: any) => shark.name === message.speaker);
+    const speakerLabel = investor ? `${message.speaker} (${investor.title})` : message.speaker;
+    return `
+    <article id="message-${esc(message.id)}" role="group" aria-label="${esc(`${speakerLabel}: ${message.text}`)}" class="message ${message.kind === "question" ? "from-you" : message.kind === "shark_question" || message.kind === "offer" ? "from-shark" : message.kind === "round" ? "stage-message" : "from-founder"} ${incomingIds.has(message.id) ? "pending-message" : ""}">
+      ${message.kind === "round" ? `<p class="stage-message-text">${incomingIds.has(message.id) ? "" : esc(message.text)}</p>` : `<div class="message-meta"><span class="speaker">${esc(message.speaker)}</span>${investor ? `<span class="speaker-personality">(${esc(investor.title)})</span>` : ""}</div><p class="message-text">${incomingIds.has(message.id) ? "" : esc(message.text)}</p>`}
+    </article>`;
+  }).join("");
   const disclosures = game.disclosures.length ? game.disclosures.map((key: string) => `<span class="clue-chip found">${esc(key)}</span>`).join("") : `<span class="clue-empty">Nothing surfaced yet.</span>`;
   const offerRows = game.offers.length ? game.offers.map((offer: any) => `
     <div class="offer-row"><div><span class="offer-name">${esc(offer.investor)}</span><small>${offer.secured ? "SECURED" : "UNSECURED"} · ${offer.term_months} MO</small></div><div class="offer-numbers"><b>${money(offer.amount)}</b><small>${Number(offer.rate).toFixed(1)}% APR${offer.royalty ? ` · ${offer.royalty}% REV` : ""}</small></div></div>`).join("") : `<div class="empty-offers"><span class="empty-offer-icon">↗</span><span>No active offers</span><small>The table is still open.</small></div>`;
-  const hasCrs = game.crs_available;
-  const report = game.pitch.crs_report;
+  const capitalPercent = game.starting_capital > 0 ? Math.min(100, Math.max(0, game.balance / game.starting_capital * 100)) : 0;
   const decisionRequired = game.question_asked && game.phase === "investigate";
+  const questionInvitation = !game.question_asked && game.phase === "investigate" && !busy;
   const pitchReview = game.phase === "pitch_review";
+  const offerTerms = offerDraft ?? { amount: game.pitch.ask_amount, rate: Number(game.pitch.opening_rate), royalty: 0, termMonths: 36, secured: false };
+  const moveHeading = pitchReview ? "PITCH REVIEW" : offerEditorOpen ? "SET OFFER TERMS" : "MAKE YOUR MOVE";
+  const moveSubtitle = pitchReview
+    ? "The founder's decision is intentionally held until the full conversation has been reviewed."
+    : offerEditorOpen
+      ? "Adjust the terms, or go back to choose Pass or I'm out."
+      : "Choose how you want to respond to this pitch.";
+  const moveContent = pitchReview
+    ? `<div class="decision-review" role="status"><span class="round-required-mark">✓</span><div><b>ROUND CLOSED · CONVERSATION PRESERVED</b><p>All messages and offers remain above. Reveal the founder's decision when you are ready, or reveal the full transcript and decision now.</p></div><button type="button" id="reveal-decision" class="primary-button">SHOW TRANSCRIPT & REVEAL DECISION ↗</button></div>`
+    : offerEditorOpen
+      ? `<form id="offer-form" class="offer-form offer-terms-form">
+          <label><span>LOAN AMOUNT</span><div class="money-input"><i>$</i><input id="offer-amount" class="turn-control" type="number" min="25000" max="750000" step="5000" value="${offerTerms.amount}" required /></div></label>
+          <label><span>ANNUAL INTEREST</span><div class="number-input"><input id="offer-rate" class="turn-control" type="number" min="0" max="40" step="0.25" value="${offerTerms.rate.toFixed(2)}" required /><i>%</i></div></label>
+          <label><span>REVENUE SHARE</span><div class="number-input"><input id="offer-royalty" class="turn-control" type="number" min="0" max="12" step="0.25" value="${offerTerms.royalty}" /><i>%</i></div></label>
+          <label><span>TERM</span><select id="offer-term" class="select-control turn-control"><option value="24" ${offerTerms.termMonths === 24 ? "selected" : ""}>24 months</option><option value="36" ${offerTerms.termMonths === 36 ? "selected" : ""}>36 months</option><option value="48" ${offerTerms.termMonths === 48 ? "selected" : ""}>48 months</option><option value="60" ${offerTerms.termMonths === 60 ? "selected" : ""}>60 months</option></select></label>
+          <label class="secured-control"><input id="offer-secured" class="turn-control" type="checkbox" ${offerTerms.secured ? "checked" : ""} /><span>SECURED</span></label>
+          <button type="button" id="back-to-moves" class="text-button back-button turn-control">← BACK</button>
+          <button type="submit" class="primary-button offer-submit turn-control" data-intrinsic-disabled="${game.human_out}" ${game.human_out || busy ? "disabled" : ""}>SUBMIT OFFER <span>↗</span></button>
+        </form><div class="dock-footnote">Interest and revenue share are simulated terms. This game does not issue a loan.</div>`
+      : `<div class="move-choice-grid" role="group" aria-label="Choose your move">
+          <button type="button" id="choose-offer" class="primary-button move-choice-button turn-control" data-intrinsic-disabled="${game.human_out}" ${game.human_out || busy ? "disabled" : ""}>SUBMIT OFFER <span class="button-arrow">↗</span></button>
+          <button type="button" id="pass-turn" class="text-button move-choice-button turn-control" ${busy ? "disabled" : ""}>PASS</button>
+          <button type="button" id="out-turn" class="text-button out-button move-choice-button turn-control" aria-label="Leave the pitch while the conversation continues among the remaining investors" data-intrinsic-disabled="${game.human_out}" ${game.human_out || busy ? "disabled" : ""}>I'M OUT - CONVERSATION CONTINUES</button>
+        </div>`;
 
   ui.innerHTML = `
     <div class="game-shell has-full-scene">
@@ -434,44 +469,37 @@ function renderGame(animateMessages: Message[] = []) {
       <div id="player-speech-bubble" class="player-speech-bubble" hidden><p></p></div>
       <a class="skip-link" href="#conversation-panel">Skip to the conversation</a>
       <header class="game-topbar">
-        <a class="brand compact" href="#"><span class="brand-mark">CT</span><span>THE CREDIT TANK<small>UNDERWRITING LAB</small></span></a>
+        <a class="brand compact" href="#"><span class="brand-mark">ST</span><span>SHRIMP TANK<small>UNDERWRITING LAB</small></span></a>
         <div class="session-progress"><div class="progress-label"><span>SESSION PROGRESS</span><b>${String(game.pitch_index).padStart(2, "0")} <i>/</i> ${String(game.total_pitches).padStart(2, "0")}</b></div><div class="progress-track"><span style="width:${game.pitch_index / game.total_pitches * 100}%"></span></div></div>
-        <div class="capital-pill"><span>AVAILABLE CAPITAL</span><b>${money(game.balance)}</b></div>
         <div class="game-status"><span class="live-dot"></span><span>${aiBadge}</span></div>
-        <button type="button" id="debug-reset" class="debug-reset-button" aria-label="Reset game, delete this session, and return to setup" title="Reset game and return to setup"><span class="debug-reset-label">DEBUG RESET</span><span aria-hidden="true">↻</span></button>
+        <button type="button" id="debug-reset" class="debug-reset-button" aria-label="Reset game and return to setup" title="Reset game and return to setup"><span class="debug-reset-label">RESET GAME</span><span aria-hidden="true">↻</span></button>
         <button type="button" class="icon-button exit-button" id="exit-game" aria-label="Exit session">×</button>
       </header>
-      <div class="pitch-heading"><div><span class="eyebrow"><span class="eyebrow-line"></span>${esc(game.pitch.archetype)} <span class="dot-sep">·</span> ${esc(game.pitch.sector)}</span><h1>${esc(game.pitch.company)}</h1><p>FOUNDER <b>${esc(game.pitch.founder)}</b><span class="dot-sep">·</span> ASKING <b>${money(game.pitch.ask_amount)}</b></p></div><div class="round-pill"><span>ROUND</span><b>${String(game.round).padStart(2, "0")}<i> / 03</i></b></div></div>
       <section class="game-grid">
         <aside class="side-column left-column">
-          <div class="panel company-panel"><div class="panel-label"><span>THE ASK</span><span class="panel-index">01</span></div><div class="ask-value">${money(game.pitch.ask_amount)}</div><div class="ask-purpose">${esc(game.pitch.purpose)}</div><div class="mini-metric"><span>REPORTED ANNUAL REVENUE</span><b>${money(game.pitch.public_revenue)}</b></div><div class="mini-metric"><span>PROPOSED OPENING RATE</span><b>${Number(game.pitch.opening_rate).toFixed(1)}<small>% APR</small></b></div></div>
-          <div class="panel notes-panel"><div class="panel-label"><span>YOUR SCRATCHPAD</span><span class="note-status">PRIVATE</span></div><label class="sr-only" for="scratchpad">Personal scratchpad</label><textarea id="scratchpad" placeholder="Keep your own notes as you investigate…">${esc(notes)}</textarea><div class="notes-hint">Notes stay in this browser.</div></div>
+          <div class="panel company-panel"><div class="panel-label"><span>THE ASK</span><span class="panel-index">01</span></div><h2 class="company-name">${esc(game.pitch.company)}</h2><div class="ask-value">${money(game.pitch.ask_amount)}</div><div class="ask-purpose">${esc(game.pitch.purpose)}</div><div class="mini-metric"><span>REPORTED ANNUAL REVENUE</span><b>${money(game.pitch.public_revenue)}</b></div><div class="mini-metric"><span>PROPOSED OPENING RATE</span><b>${Number(game.pitch.opening_rate).toFixed(1)}<small>% APR</small></b></div></div>
+          <div class="panel ledger-panel"><div class="panel-label"><span>ACTIVE OFFERS</span><span class="panel-index">${String(game.offers.length).padStart(2, "0")}</span></div><div class="offer-list">${offerRows}</div></div>
+          <div class="panel capital-panel"><div class="panel-label"><span>AVAILABLE CAPITAL</span><b class="capital-percent">${Math.round(capitalPercent)}%</b></div><div class="capital-track" role="progressbar" aria-label="Available starting capital" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(capitalPercent)}" aria-valuetext="${money(game.balance)} remaining from ${money(game.starting_capital)}"><span style="width:${capitalPercent}%"></span></div><div class="capital-values"><div><span>CASH LEFT</span><b>${money(game.balance)}</b></div><div><span>STARTED WITH</span><b>${money(game.starting_capital)}</b></div></div></div>
           <div class="panel discovery-panel"><div class="panel-label"><span>WHAT YOU'VE UNCOVERED</span><span class="panel-index">${String(game.disclosures.length).padStart(2, "0")}</span></div><div class="clue-list">${disclosures}</div></div>
         </aside>
         <section id="conversation-panel" class="panel dialogue-panel" aria-label="Pitch dialogue" tabindex="-1">
-          <div class="dialogue-top"><div class="panel-label"><span>THE CONVERSATION</span><span class="conversation-state"><span class="live-dot"></span> ON THE RECORD</span></div><div class="conversation-subtitle">Question the story. Find what the numbers don't say.<button type="button" id="skip-dialogue" class="skip-dialogue" hidden>SHOW ALL ↗</button></div></div>
+          <div class="dialogue-top"><div class="panel-label dialogue-topline"><span>THE CONVERSATION</span></div><div class="conversation-round" role="status" aria-label="Round ${game.round} of ${game.max_rounds}"><span>ROUND</span><b>${String(game.round).padStart(2, "0")}<i> / ${String(game.max_rounds).padStart(2, "0")}</i></b></div><div class="conversation-subtitle">Question the story. Find what the numbers don't say.</div></div>
           <p class="sr-only">A full-screen, low-poly television pitch studio sits behind the game interface. Drag any exposed area of the scene to look around; the interface remains in place.</p>
           <div class="transcript" id="transcript">${messages}<div class="transcript-end" id="transcript-end"></div></div>
-          <div class="compose-area">
-            ${pitchReview ? `<div class="decision-review" role="status"><span class="round-required-mark">✓</span><div><b>ROUND CLOSED · CONVERSATION PRESERVED</b><p>All messages and offers remain above. Reveal the founder's decision when you are ready, or reveal the full transcript and decision now.</p></div><button type="button" id="reveal-decision" class="primary-button">SHOW TRANSCRIPT & REVEAL DECISION ↗</button></div>` : decisionRequired ? `<div class="round-locked"><span class="round-required-mark">!</span><div><b>YOUR QUESTION HAS BEEN USED</b><p>This round ends with a decision. Use the highlighted decision bar below to submit an offer, pass, or leave.</p></div><a href="#offer-dock" class="decision-banner-action">GO TO DECISION ↓</a></div>` : `<div class="prompt-row"><span>ASK ABOUT</span><button type="button" class="prompt-chip" data-question="What's your personal credit history and current debt?">Credit</button><button type="button" class="prompt-chip" data-question="How much free cash flow do you have after paying suppliers and debt?">Capacity</button><button type="button" class="prompt-chip" data-question="How much have you invested in the business?">Capital</button><button type="button" class="prompt-chip" data-question="What assets could you pledge as collateral?">Collateral</button><button type="button" class="prompt-chip" data-question="Who are your largest customers, and how secure are those orders?">Customers</button></div><form id="question-form" class="question-form"><label class="sr-only" for="question-input">Question for the founder</label><input id="question-input" class="turn-control" data-intrinsic-disabled="false" type="text" maxlength="400" placeholder="Ask your own question…" autocomplete="off" ${busy ? "disabled" : ""} /><button class="send-button turn-control" data-intrinsic-disabled="false" type="submit" aria-label="Ask question" ${busy ? "disabled" : ""}>↗</button></form><div class="turn-bar"><span id="reading-label">YOUR MOVE</span><span>MAX 400 CHARACTERS</span></div>`}
+          <div class="compose-area" ${pitchReview ? "hidden" : ""}>
+            ${decisionRequired ? `<div class="round-locked"><span class="round-required-mark">!</span><div><b>YOUR QUESTION HAS BEEN USED</b><p>This round ends with a decision. Use the highlighted decision bar below to submit an offer, pass, or leave.</p></div><a href="#offer-dock" class="decision-banner-action">GO TO DECISION ↓</a></div>` : pitchReview ? "" : `<div class="prompt-row"><span>ASK ABOUT</span><button type="button" class="prompt-chip" data-question="What's your personal credit history and current debt?">Credit</button><button type="button" class="prompt-chip" data-question="How much free cash flow do you have after paying suppliers and debt?">Capacity</button><button type="button" class="prompt-chip" data-question="How much have you invested in the business?">Capital</button><button type="button" class="prompt-chip" data-question="What assets could you pledge as collateral?">Collateral</button><button type="button" class="prompt-chip" data-question="Who are your largest customers, and how secure are those orders?">Customers</button></div><form id="question-form" class="question-form ${questionInvitation ? "question-invitation" : ""}"><label class="sr-only" for="question-input">Question for the founder</label><input id="question-input" class="turn-control" data-intrinsic-disabled="false" type="text" maxlength="400" placeholder="Ask your own question…" autocomplete="off" ${busy ? "disabled" : ""} /><button class="send-button turn-control" data-intrinsic-disabled="false" type="submit" aria-label="Ask question" ${busy ? "disabled" : ""}>↗</button></form><div class="turn-bar"><span id="reading-label">YOUR MOVE</span><span>MAX 400 CHARACTERS</span></div>`}
           </div>
         </section>
-        <aside class="side-column right-column">
-          <div class="panel panelists-panel"><div class="panel-label"><span>AT THE TABLE</span><span class="panel-index">03</span></div>${game.sharks.map((shark: any) => `<div class="shark-row"><span class="shark-avatar" style="--shark-color:${esc(shark.color)}">${esc(shark.name.split(" ").map((part: string) => part[0]).join(""))}</span><span class="shark-person"><b>${esc(shark.name)}</b><small>${esc(shark.title)}</small></span><span class="shark-capital">${money(shark.capital)}</span></div>`).join("")}<p class="persona-note">${esc(personaNote)}</p></div>
-          <div class="panel ledger-panel"><div class="panel-label"><span>ACTIVE OFFERS</span><span class="panel-index">${String(game.offers.length).padStart(2, "0")}</span></div><div class="offer-list">${offerRows}</div></div>
-          <div class="panel crs-panel"><div class="panel-label"><span>FOUNDER CREDIT FILE</span><span class="panel-index">CRS</span></div><p>Presenter is based on synthetic CRS persona ${esc(game.pitch.sandbox_persona)}. Use its report as one clue in this fictional business case.</p>${report ? `<div class="report-result"><b>${report.score ?? "No score"}</b><span>${esc(report.model || report.file_status)} · ${report.request_id ? `ID ${esc(report.request_id.slice(0, 8))}…` : "sandbox report"}</span></div>` : ""}<button type="button" id="crs-button" class="secondary-button" ${!hasCrs || busy ? "disabled" : ""}>${hasCrs ? (report ? "REFRESH SANDBOX REPORT" : "PULL SANDBOX REPORT") : "BACKEND CREDENTIALS NEEDED"}<span>↗</span></button></div>
-        </aside>
       </section>
-      <section id="offer-dock" class="offer-dock ${decisionRequired ? "round-required" : ""} ${pitchReview ? "review-dock" : ""}"><div class="dock-heading"><div><span class="panel-label">${pitchReview ? "PITCH REVIEW" : "MAKE YOUR MOVE"}</span><span class="dock-subtitle">${pitchReview ? "The founder's decision is intentionally held until the full conversation has been reviewed." : decisionRequired ? "Required now: close this round with an offer, pass, or leave the pitch." : "A loan offer stays active until you revise it or leave the pitch."}</span></div><span class="round-reminder">ROUND ${game.round} / 3</span></div>${pitchReview ? `<div class="review-dock-message">All offers are locked. Use the reveal control at the end of the conversation to see the founder's selection.</div>` : `<form id="offer-form" class="offer-form"><label><span>LOAN AMOUNT</span><div class="money-input"><i>$</i><input id="offer-amount" class="turn-control" type="number" min="25000" max="750000" step="5000" value="${game.pitch.ask_amount}" required /></div></label><label><span>ANNUAL INTEREST</span><div class="number-input"><input id="offer-rate" class="turn-control" type="number" min="0" max="40" step="0.25" value="${Number(game.pitch.opening_rate).toFixed(2)}" required /><i>%</i></div></label><label><span>REVENUE SHARE</span><div class="number-input"><input id="offer-royalty" class="turn-control" type="number" min="0" max="12" step="0.25" value="0" /><i>%</i></div></label><label><span>TERM</span><select id="offer-term" class="select-control turn-control"><option value="24">24 months</option><option value="36" selected>36 months</option><option value="48">48 months</option><option value="60">60 months</option></select></label><label class="secured-control"><input id="offer-secured" class="turn-control" type="checkbox" /><span>SECURED</span></label><button type="submit" class="primary-button offer-submit turn-control" data-intrinsic-disabled="${game.human_out}" ${game.human_out || busy ? "disabled" : ""}>SUBMIT OFFER <span>↗</span></button><button type="button" id="pass-turn" class="text-button turn-control" ${busy ? "disabled" : ""}>PASS</button><button type="button" id="out-turn" class="text-button out-button turn-control" aria-label="Leave the pitch and let the remaining investors continue" data-intrinsic-disabled="${game.human_out}" ${game.human_out || busy ? "disabled" : ""}>I'M OUT · TABLE CONTINUES</button></form><div class="dock-footnote">Interest and revenue share are simulated terms. This game does not issue a loan.</div>`}</section>
+      <section id="offer-dock" class="offer-dock ${decisionRequired ? "round-required" : ""} ${pitchReview ? "review-dock" : ""}">
+        <div class="dock-heading"><div><span class="panel-label">${moveHeading}</span><span class="dock-subtitle">${moveSubtitle}</span></div></div>
+        ${moveContent}
+      </section>
       <footer class="game-footer"><span>FICTIONAL BUSINESS CASE · CRS DATA IS SYNTHETIC SANDBOX DATA</span><span>NO REAL CREDIT DECISIONS · FIVE Cs TEACHING RUBRIC</span></footer>
     </div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>`;
 
   stage?.mount(document.querySelector<HTMLElement>("#game-stage")!);
-  document.querySelector<HTMLButtonElement>("#skip-dialogue")!.addEventListener("click", revealDialogue);
-
-  const scratchpad = document.querySelector<HTMLTextAreaElement>("#scratchpad")!;
-  scratchpad.addEventListener("input", () => localStorage.setItem(notesKey, scratchpad.value));
   const transcript = document.querySelector<HTMLElement>("#transcript")!;
   transcript.scrollTop = transcript.scrollHeight;
   document.querySelectorAll<HTMLButtonElement>(".prompt-chip").forEach((button) => button.addEventListener("click", () => {
@@ -479,11 +507,25 @@ function renderGame(animateMessages: Message[] = []) {
     if (input && !game?.question_asked) { input.value = button.dataset.question || ""; input.focus(); }
   }));
   document.querySelector<HTMLFormElement>("#question-form")?.addEventListener("submit", askFounder);
-  document.querySelector<HTMLFormElement>("#offer-form")?.addEventListener("submit", (event) => { event.preventDefault(); submitMove("offer"); });
+  const offerForm = document.querySelector<HTMLFormElement>("#offer-form");
+  const saveOfferDraft = () => { offerDraft = readOfferDraft(); };
+  offerForm?.addEventListener("input", saveOfferDraft);
+  offerForm?.addEventListener("change", saveOfferDraft);
+  offerForm?.addEventListener("submit", (event) => { event.preventDefault(); saveOfferDraft(); submitMove("offer"); });
+  document.querySelector<HTMLButtonElement>("#choose-offer")?.addEventListener("click", () => {
+    offerEditorOpen = true;
+    renderGame();
+    document.querySelector<HTMLInputElement>("#offer-amount")?.focus({ preventScroll: true });
+  });
+  document.querySelector<HTMLButtonElement>("#back-to-moves")?.addEventListener("click", () => {
+    offerDraft = readOfferDraft();
+    offerEditorOpen = false;
+    renderGame();
+    document.querySelector<HTMLButtonElement>("#choose-offer")?.focus({ preventScroll: true });
+  });
   document.querySelector<HTMLButtonElement>("#pass-turn")?.addEventListener("click", () => submitMove("pass"));
   document.querySelector<HTMLButtonElement>("#out-turn")?.addEventListener("click", () => submitMove("out"));
   document.querySelector<HTMLButtonElement>("#reveal-decision")?.addEventListener("click", revealDecision);
-  document.querySelector<HTMLButtonElement>("#crs-button")!.addEventListener("click", pullReport);
   document.querySelector<HTMLButtonElement>("#debug-reset")!.addEventListener("click", resetGameToMenu);
   document.querySelector<HTMLButtonElement>("#exit-game")!.addEventListener("click", () => {
     if (window.confirm("Leave this session? Its in-memory state is available until the game server restarts.")) { localStorage.removeItem("credit-tank-session"); renderLanding(); }
@@ -492,26 +534,12 @@ function renderGame(animateMessages: Message[] = []) {
   playDialogue(animateMessages);
 }
 
-async function resetGameToMenu() {
+function resetGameToMenu() {
   if (!game || busy) return;
-  if (!window.confirm("Reset this game, delete its saved session and notes, and return to setup?")) return;
   const sessionId = game.id;
-  const button = document.querySelector<HTMLButtonElement>("#debug-reset");
-  if (button) button.disabled = true;
-  busy = true;
-  let cleanupError = "";
-  try {
-    await api(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
-  } catch (error) {
-    cleanupError = error instanceof Error ? error.message : "The server couldn't delete the saved session.";
-  }
   localStorage.removeItem("credit-tank-session");
-  localStorage.removeItem(`credit-tank-notes-${sessionId}`);
-  const notesPrefix = `credit-tank-notes-${sessionId}-`;
-  Object.keys(localStorage).filter((key) => key.startsWith(notesPrefix)).forEach((key) => localStorage.removeItem(key));
-  busy = false;
   renderLanding();
-  if (cleanupError) toast(`Returned to setup, but server cleanup failed: ${cleanupError}`);
+  void api(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" }).catch(() => undefined);
 }
 
 async function askFounder(event: SubmitEvent) {
@@ -524,7 +552,7 @@ async function askFounder(event: SubmitEvent) {
   renderGame();
   const priorCount = game.messages.length;
   const transcript = document.querySelector<HTMLElement>("#transcript");
-  const makeQuestionMessage = (roundNumber: number) => {
+  const makeQuestionMessage = () => {
     const article = document.createElement("article");
     article.className = "message from-you";
     article.setAttribute("role", "group");
@@ -534,19 +562,16 @@ async function askFounder(event: SubmitEvent) {
     const speaker = document.createElement("span");
     speaker.className = "speaker";
     speaker.textContent = "You";
-    const round = document.createElement("span");
-    round.className = "message-round";
-    round.textContent = `ROUND ${String(roundNumber).padStart(2, "0")}`;
     const body = document.createElement("p");
     body.className = "message-text";
     body.textContent = question;
-    meta.append(speaker, round);
+    meta.append(speaker);
     article.append(meta, body);
     transcript?.append(article);
     transcript?.scrollTo({ top: transcript.scrollHeight, behavior: "smooth" });
     return article;
   };
-  makeQuestionMessage(game.round);
+  makeQuestionMessage();
   const progress = document.createElement("div");
   progress.className = "stream-status";
   progress.id = "stream-status";
@@ -594,11 +619,14 @@ async function submitMove(action: "offer" | "pass" | "out") {
   const previousMessages = game.messages.length;
   const payload: any = { action };
   if (action === "offer") {
-    payload.amount = Number(document.querySelector<HTMLInputElement>("#offer-amount")?.value);
-    payload.rate = Number(document.querySelector<HTMLInputElement>("#offer-rate")?.value);
-    payload.royalty = Number(document.querySelector<HTMLInputElement>("#offer-royalty")?.value || 0);
-    payload.term_months = Number(document.querySelector<HTMLSelectElement>("#offer-term")?.value || 36);
-    payload.secured = Boolean(document.querySelector<HTMLInputElement>("#offer-secured")?.checked);
+    const terms = readOfferDraft();
+    if (!terms) { busy = false; return; }
+    offerDraft = terms;
+    payload.amount = terms.amount;
+    payload.rate = terms.rate;
+    payload.royalty = terms.royalty;
+    payload.term_months = terms.termMonths;
+    payload.secured = terms.secured;
   }
   renderGame();
   try {
@@ -606,6 +634,8 @@ async function submitMove(action: "offer" | "pass" | "out") {
     const fresh = game.messages.slice(previousMessages);
     if (game.phase === "investigate" || game.phase === "pitch_review") holdForDialogue(fresh);
     else readingUntil = 0;
+    offerEditorOpen = false;
+    offerDraft = null;
     busy = false;
     renderGame(fresh);
     if (game.phase === "pitch_review") announce("The round is closed. Review the complete conversation before revealing the founder's decision.");
@@ -618,7 +648,7 @@ async function submitMove(action: "offer" | "pass" | "out") {
 
 async function revealDecision() {
   if (!game || busy || game.phase !== "pitch_review") return;
-  if (Date.now() < readingUntil || speechActive) revealDialogue();
+  if (Date.now() < readingUntil || speechActive) showFullTranscript();
   busy = true;
   const button = document.querySelector<HTMLButtonElement>("#reveal-decision");
   if (button) { button.disabled = true; button.textContent = "REVEALING DECISION…"; }
@@ -634,23 +664,6 @@ async function revealDecision() {
   } finally { busy = false; }
 }
 
-async function pullReport() {
-  if (!game || busy) return;
-  busy = true;
-  renderGame();
-  try {
-    const result = await api<{ report: any; state: GameState }>(`/api/sessions/${game.id}/crs-report`, { method: "POST", body: "{}" });
-    game = result.state;
-    busy = false;
-    renderGame();
-    toast(`Sandbox report received${result.report.score ? ` · ${result.report.score} score` : ""}.`, "success");
-  } catch (error) {
-    busy = false;
-    renderGame();
-    toast(error instanceof Error ? error.message : "CRS sandbox report failed.");
-  } finally { busy = false; }
-}
-
 function renderPitchResult() {
   if (!game) return;
   stopSpeech();
@@ -661,8 +674,8 @@ function renderPitchResult() {
   const result = game.result;
   const accepted = result?.outcome === "deal";
   ui.innerHTML = `
-    <div class="result-shell"><header class="game-topbar"><a class="brand compact" href="#"><span class="brand-mark">CT</span><span>THE CREDIT TANK<small>UNDERWRITING LAB</small></span></a><div class="session-progress"><div class="progress-label"><span>PITCH RESOLVED</span><b>${String(game.pitch_index).padStart(2, "0")} <i>/</i> ${String(game.total_pitches).padStart(2, "0")}</b></div><div class="progress-track"><span style="width:${game.pitch_index / game.total_pitches * 100}%"></span></div></div><div class="capital-pill"><span>AVAILABLE CAPITAL</span><b>${money(game.balance)}</b></div></header>
-    <section class="result-card"><p class="eyebrow"><span class="eyebrow-line"></span>${accepted ? "THE FOUNDER HAS A DEAL" : "THE FOUNDER IS WALKING"}</p><div class="result-symbol ${accepted ? "accepted" : "passed"}">${accepted ? "✓" : "—"}</div><h1>${accepted ? "Deal closed." : "No deal."}</h1><p class="result-company">${esc(game.pitch.company)} <span>·</span> ${esc(game.pitch.archetype)}</p><div class="result-terms"><span>${esc(result.message)}</span><small>RISK GRADE ${result.grade} · ${esc(result.risk_label).toUpperCase()}</small></div><div class="result-actions"><button type="button" id="advance" class="primary-button">${game.pitch_index < game.total_pitches ? "NEXT PITCH" : "VIEW SCORECARD"}<span class="button-arrow">↗</span></button></div><p class="result-note">The detailed five Cs assessment is revealed in your final scorecard.</p></section><footer class="game-footer"><span>FICTIONAL BUSINESS CASE</span><span>NO REAL CREDIT DECISIONS</span></footer></div><div id="toast" class="toast" role="status" aria-live="polite"></div>`;
+    <div class="result-shell"><header class="game-topbar"><a class="brand compact" href="#"><span class="brand-mark">ST</span><span>SHRIMP TANK<small>UNDERWRITING LAB</small></span></a><div class="session-progress"><div class="progress-label"><span>PITCH RESOLVED</span><b>${String(game.pitch_index).padStart(2, "0")} <i>/</i> ${String(game.total_pitches).padStart(2, "0")}</b></div><div class="progress-track"><span style="width:${game.pitch_index / game.total_pitches * 100}%"></span></div></div><div class="capital-pill"><span>AVAILABLE CAPITAL</span><b>${money(game.balance)}</b></div></header>
+    <section class="result-card"><div class="result-symbol ${accepted ? "accepted" : "passed"}">${accepted ? "✓" : "—"}</div><h1>${accepted ? "Deal closed." : "No deal."}</h1><p class="result-company">${esc(game.pitch.company)} <span>·</span> ${esc(game.pitch.archetype)}</p><div class="result-terms"><span>${esc(result.message)}</span></div><div class="result-actions"><button type="button" id="advance" class="primary-button">${game.pitch_index < game.total_pitches ? "NEXT PITCH" : "VIEW SCORECARD"}<span class="button-arrow">↗</span></button></div></section><footer class="game-footer"><span>FICTIONAL BUSINESS CASE</span><span>NO REAL CREDIT DECISIONS</span></footer></div><div id="toast" class="toast" role="status" aria-live="polite"></div>`;
   document.querySelector<HTMLButtonElement>("#advance")!.addEventListener("click", advance);
 }
 
@@ -677,6 +690,8 @@ async function advance() {
   }
   try {
     game = await api<GameState>(`/api/sessions/${game.id}/next`, { method: "POST", body: "{}" });
+    offerEditorOpen = false;
+    offerDraft = null;
     stage?.setPitch(game.pitch.archetype, game.pitch.company);
     holdForDialogue(game.messages);
     busy = false;
@@ -696,11 +711,11 @@ function renderScorecard() {
   const rows = scorecard.pitches.map((pitch: any) => `
     <article class="score-pitch"><div class="score-pitch-head"><div><span class="eyebrow-small">${esc(pitch.archetype)} · GRADE ${pitch.grade}</span><h3>${esc(pitch.company)}</h3></div><span class="risk-tag grade-${pitch.grade}">${esc(pitch.risk_label)}</span></div><div class="five-cs">${Object.entries(pitch.assessment.components).map(([key, value]) => `<div class="cs-row"><span>${esc(key)}</span><div class="cs-track"><i style="width:${Number(value)}%"></i></div><b>${value}</b></div>`).join("")}</div><div class="score-pitch-details"><div><small>YOUR DECISION</small><b>${pitch.winner === "human_user" ? `FUNDED · ${money(pitch.player_offer?.amount || 0)} @ ${Number(pitch.player_offer?.rate || 0).toFixed(1)}%` : pitch.winner ? `OTHER INVESTOR · ${esc(pitch.decision.replace("_", " ").toUpperCase())}` : "NO DEAL"}</b></div><div><small>RULES-BASED BENCHMARK</small><b>${pitch.benchmark.action === "walk_away" ? "WALK AWAY" : `${money(pitch.benchmark.amount)} @ ${Number(pitch.benchmark.rate).toFixed(1)}%`}</b></div><div><small>EXPECTED GAME P&L</small><b class="${pitch.expected_profit >= 0 ? "positive" : "negative"}">${pitch.expected_profit >= 0 ? "+" : "−"}${money(Math.abs(pitch.expected_profit))}</b></div></div><p class="score-feedback">${esc(pitch.feedback)}</p><details class="evidence-details"><summary>Reveal the founder's fictional profile</summary><div class="evidence-grid"><span>Credit score <b>${pitch.credit_score ?? "No score"}</b></span><span>Derogatory signals <b>${pitch.derogatory_count}</b></span><span>Free cash flow <b>${money(pitch.monthly_free_cash_flow)}/mo</b></span><span>Owner equity <b>${money(pitch.owner_equity)}</b></span><span>Collateral <b>${money(pitch.collateral)}</b></span><span>DSCR <b>${pitch.assessment.dscr}×</b></span></div><p>${esc(pitch.benchmark.reason)}</p></details></article>`).join("");
   ui.innerHTML = `
-    <div class="scorecard-shell"><header class="game-topbar"><a class="brand compact" href="#"><span class="brand-mark">CT</span><span>THE CREDIT TANK<small>UNDERWRITING LAB</small></span></a><div class="session-progress"><div class="progress-label"><span>SESSION COMPLETE</span><b>${String(game.total_pitches).padStart(2, "0")} <i>/</i> ${String(game.total_pitches).padStart(2, "0")}</b></div><div class="progress-track"><span style="width:100%"></span></div></div><div class="capital-pill"><span>PROJECTED CAPITAL</span><b>${money(scorecard.projected_ending_capital)}</b></div><div class="game-status"><span class="live-dot"></span><span>FINAL REVIEW</span></div></header>
+    <div class="scorecard-shell"><header class="game-topbar"><a class="brand compact" href="#"><span class="brand-mark">ST</span><span>SHRIMP TANK<small>UNDERWRITING LAB</small></span></a><div class="session-progress"><div class="progress-label"><span>SESSION COMPLETE</span><b>${String(game.total_pitches).padStart(2, "0")} <i>/</i> ${String(game.total_pitches).padStart(2, "0")}</b></div><div class="progress-track"><span style="width:100%"></span></div></div><div class="capital-pill"><span>PROJECTED CAPITAL</span><b>${money(scorecard.projected_ending_capital)}</b></div><div class="game-status"><span class="live-dot"></span><span>FINAL REVIEW</span></div></header>
     <section class="score-hero"><div class="score-title"><p class="eyebrow"><span class="eyebrow-line"></span>SESSION DEBRIEF</p><h1>Read the risk.<br /><em>Price the return.</em></h1><p>Your decisions, measured against a transparent teaching benchmark built around the five Cs of credit.</p></div><div class="score-circle"><span>UNDERWRITING<br />INSTINCT</span><b>${scorecard.overall_score}</b><small>OUT OF 100</small></div></section>
     <section class="score-summary"><div><span>DECISION FIT</span><b>${scorecard.decision_accuracy}<small> / 100</small></b></div><div><span>DEALS YOU FUNDED</span><b>${scorecard.deals_funded}<small> / ${game.total_pitches}</small></b></div><div><span>EXPECTED GAME P&L</span><b class="${scorecard.expected_profit >= 0 ? "positive" : "negative"}">${scorecard.expected_profit >= 0 ? "+" : "−"}${money(Math.abs(scorecard.expected_profit))}</b></div><div><span>SESSION CAPITAL</span><b>${money(scorecard.starting_capital)}</b></div></section>
     <section class="score-list"><div class="score-list-heading"><div><span class="eyebrow-small">PITCH BY PITCH</span><h2>What the numbers say</h2></div><span class="mono muted">FIVE Cs · SIMULATED DATA</span></div>${rows}</section>
-    <div class="scorecard-caveat">${esc(scorecard.notice)} CRS data, when pulled, comes only from synthetic CalHacks sandbox personas. Company metrics and outcomes are fictional.</div><div class="score-actions"><button type="button" id="play-again" class="primary-button">RUN IT BACK <span class="button-arrow">↗</span></button><button type="button" id="home-button" class="text-button">BACK TO LOBBY</button></div><footer class="game-footer"><span>THE CREDIT TANK · UNDERWRITING LAB</span><span>SIMULATED EDUCATIONAL EXPERIENCE</span></footer></div><div id="toast" class="toast" role="status" aria-live="polite"></div>`;
+    <div class="scorecard-caveat">${esc(scorecard.notice)} Founder profiles use synthetic CRS persona facts; business metrics and outcomes are fictional.</div><div class="score-actions"><button type="button" id="play-again" class="primary-button">RUN IT BACK <span class="button-arrow">↗</span></button><button type="button" id="home-button" class="text-button">BACK TO LOBBY</button></div><footer class="game-footer"><span>SHRIMP TANK · UNDERWRITING LAB</span><span>SIMULATED EDUCATIONAL EXPERIENCE</span></footer></div><div id="toast" class="toast" role="status" aria-live="polite"></div>`;
   document.querySelector<HTMLButtonElement>("#play-again")!.addEventListener("click", startGame);
   document.querySelector<HTMLButtonElement>("#home-button")!.addEventListener("click", () => { localStorage.removeItem("credit-tank-session"); renderLanding(); });
 }
