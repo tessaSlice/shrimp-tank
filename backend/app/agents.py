@@ -441,7 +441,7 @@ async def player_question_exchange(
 
 
 async def table_exchange(pitch: dict, messages: list[dict], round_number: int, *, player_out: bool = False) -> dict:
-    """Generate the investors' continued discussion after the player exits."""
+    """Generate one concise investor-to-founder exchange while the player passes or exits."""
     shark, next_shark, topic, fallback_question = _turn_sharks(round_number)
     founder_fact = fact_for(pitch, topic)
     if active_provider() != "xai":

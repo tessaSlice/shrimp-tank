@@ -17,7 +17,13 @@ export function createStage(initialHost: HTMLElement): Stage | null {
     scene.fog = new THREE.Fog(0x0a1830, 26, 52);
     const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 70);
     const seatPosition = new THREE.Vector3(0, 1.72, 6.65);
-    const seatTarget = new THREE.Vector3(0, 1.9, -4.7);
+    const cameraLookDownSlope = Math.tan(THREE.MathUtils.degToRad(7));
+    const tiltLookTargetDown = (target: THREE.Vector3) => {
+      const horizontalDistance = Math.hypot(target.x - seatPosition.x, target.z - seatPosition.z);
+      target.y -= cameraLookDownSlope * horizontalDistance;
+      return target;
+    };
+    const seatTarget = tiltLookTargetDown(new THREE.Vector3(0, 1.9, -4.7));
     camera.position.copy(seatPosition);
     camera.lookAt(seatTarget);
 
@@ -863,6 +869,7 @@ export function createStage(initialHost: HTMLElement): Stage | null {
         if (selectedSpeaker !== null && selectedSpeaker > 0 && actors[selectedSpeaker]) {
           actors[selectedSpeaker].group.getWorldPosition(speakerLook);
           speakerLook.y += 2.5;
+          tiltLookTargetDown(speakerLook);
           normalLook.lerp(speakerLook, 0.08);
         } else {
           normalLook.lerp(seatTarget, 0.08);

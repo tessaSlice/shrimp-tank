@@ -535,6 +535,12 @@ async def submit_decision(session_id: str, payload: SubmitDecision) -> dict:
         except DialogueProviderError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         return _public_state(session)
+    elif payload.action == "pass":
+        try:
+            exchange = await table_exchange(session.pitch, session.messages, session.round_number)
+        except DialogueProviderError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        _append_ai_table_exchange(session, exchange)
 
     _record_shark_offer(session, assessment)
 
@@ -550,7 +556,7 @@ async def submit_decision(session_id: str, payload: SubmitDecision) -> dict:
 
     session.round_number += 1
     session.question_asked = False
-    session.messages.append(_new_message("Stage manager", f"Round {session.round_number} of 3. Ask one more question before your next move.", "round", session.round_number))
+    session.messages.append(_new_message("Stage manager", "The table is open. Ask one more question before your next move.", "round", session.round_number))
     return _public_state(session)
 
 
