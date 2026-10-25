@@ -22,7 +22,7 @@ from .agents import (
     stream_player_question_exchange,
     table_exchange,
 )
-from .catalog import PITCHES, SHARKS, get_pitch
+from .catalog import PROFILES, SHARKS, get_pitch
 from .main_types import GameSession
 from .spacetime_store import SpacetimeSessionStore
 from .store import InMemorySessionStore, SessionStore
@@ -93,6 +93,11 @@ def _public_offer(offer: dict) -> dict:
     return {key: value for key, value in offer.items() if key != "internal"}
 
 
+def _accepted_offer_message(founder: str, offer: dict) -> str:
+    description = "your offer" if offer["investor_id"] == "human_user" else f"{offer['investor']}'s offer"
+    return f"{founder} accepted {description}: ${offer['amount']:,} at {offer['rate']:.2f}%"
+
+
 def _public_state(session: GameSession) -> dict:
     pitch = session.pitch
     public_pitch = {
@@ -112,6 +117,15 @@ def _public_state(session: GameSession) -> dict:
         for offer in session.offers
         if offer["status"] in ("pending", "accepted")
     ]
+    result = session.result
+    if result and result.get("outcome") == "deal":
+        accepted_offer = next((
+            offer for offer in session.offers
+            if offer["status"] == "accepted" and offer["investor_id"] == result.get("winner")
+        ), None)
+        if accepted_offer:
+            # Reformat saved results too; their stored wording may predate a copy fix.
+            result = {**result, "message": _accepted_offer_message(pitch["founder"], accepted_offer)}
     return {
         "id": session.session_id,
         "phase": session.phase,
@@ -129,7 +143,7 @@ def _public_state(session: GameSession) -> dict:
         "sharks": SHARKS,
         "question_asked": session.question_asked,
         "human_out": session.human_out,
-        "result": session.result,
+        "result": result,
         "scorecard": session.scorecard if session.phase != "pitch_review" else None,
         "ai_mode": active_provider(),
     }
@@ -278,8 +292,7 @@ def _finish_pitch(session: GameSession, assessment: dict, benchmark_data: dict, 
         "grade": assessment["grade"],
         "risk_label": assessment["label"],
         "message": (
-            f"{session.pitch['founder']} accepted {winner['investor']}'s offer: "
-            f"${winner['amount']:,} at {winner['rate']:.2f}%" if winner else
+            _accepted_offer_message(session.pitch["founder"], winner) if winner else
             f"{session.pitch['founder']} is leaving without a deal."
         ),
     }
@@ -327,7 +340,7 @@ async def config() -> dict:
 async def create_session(payload: CreateSession) -> dict:
     starting_capital = CAPITAL_BY_DIFFICULTY[payload.difficulty]
     seed = random.SystemRandom()
-    pitch_queue = [item["id"] for item in seed.sample(PITCHES, payload.total_pitches)]
+    pitch_queue = [item["id"] for item in seed.sample(PROFILES, payload.total_pitches)]
     session = GameSession(
         session_id=str(uuid.uuid4()),
         total_pitches=payload.total_pitches,
@@ -525,10 +538,18 @@ async def submit_decision(session_id: str, payload: SubmitDecision) -> dict:
             raise HTTPException(status_code=422, detail="Check the amount, rate, and royalty. Amount must be at least 78% of the ask; rate is capped at 40%.")
         if payload.amount > session.balance:
             raise HTTPException(status_code=422, detail=f"Your remaining capital is ${session.balance:,}.")
+        try:
+            exchange = await table_exchange(
+                session.pitch, session.messages, session.round_number, player_offer=offer,
+            )
+        except DialogueProviderError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        # Generate before changing bids so a provider failure leaves the turn retryable.
         for previous in session.offers:
             if previous["investor_id"] == "human_user" and previous["status"] == "pending":
                 previous["status"] = "withdrawn"
         session.offers.append(offer)
+        _append_ai_table_exchange(session, exchange)
     elif payload.action == "out":
         try:
             await _complete_ai_negotiation(session, assessment, benchmark_data)

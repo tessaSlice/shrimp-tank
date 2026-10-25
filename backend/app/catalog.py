@@ -5,140 +5,8 @@ from copy import deepcopy
 
 # The people are CRS's published CalHacks sandbox personas. Company financials
 # and all business details are fictional teaching data created for this game.
-PITCHES = [
-    {
-        "id": "spindle-loom",
-        "archetype": "THE TRAP",
-        "company": "Spindle & Loom",
-        "founder": "Ricky Dalton",
-        "sector": "Circular textiles",
-        "ask_amount": 160_000,
-        "opening_rate": 9.0,
-        "purpose": "Buy reclaimed-fiber inventory and keep two mills running through the holiday season.",
-        "opening": "We turn discarded fabric into durable workwear. Two regional retailers are ready to expand our orders, and a $160,000 line would let us buy inventory before the season starts.",
-        "public_revenue": 510_000,
-        "sandbox_persona": "P05",
-        "sandbox_expected_score": 540,
-        "profile": {
-            "credit_score": 540,
-            "derogatory_count": 3,
-            "thin_file": False,
-            "severe_delinquency": True,
-            "monthly_free_cash_flow": 7_000,
-            "owner_equity": 18_000,
-            "collateral": 25_000,
-            "market_strength": 48,
-            "monthly_existing_debt": 3_100,
-        },
-        "facts": {
-            "character": "My personal credit is 540. I have two collections and a recent 90-day late payment. I should have brought that up sooner.",
-            "capacity": "After payroll and suppliers, we keep about $7,000 a month in free cash. Existing monthly debt payments are around $3,100.",
-            "capital": "I have $18,000 of my own cash in the company. Most of our working capital is tied up in inventory.",
-            "collateral": "The looms and finished inventory might support about $25,000 of collateral value today.",
-            "conditions": "Our two largest buyers account for most of the new orders. The seasonal contract is not guaranteed beyond this year.",
-        },
-        "benchmark_context": "High personal-credit risk and thin repayment cushion; avoid unless strongly protected.",
-    },
-    {
-        "id": "northstar-cold-chain",
-        "archetype": "THE NEGOTIATOR",
-        "company": "Northstar Cold Chain",
-        "founder": "Priya Venkatesan",
-        "sector": "Food logistics",
-        "ask_amount": 210_000,
-        "opening_rate": 8.0,
-        "purpose": "Add two refrigerated vans for a signed regional distribution contract.",
-        "opening": "We move temperature-sensitive food for independent grocers. A new regional contract is signed, and I need $210,000 for two refrigerated vans to serve it.",
-        "public_revenue": 1_080_000,
-        "sandbox_persona": "P08",
-        "sandbox_expected_score": 690,
-        "profile": {
-            "credit_score": 690,
-            "derogatory_count": 1,
-            "thin_file": False,
-            "severe_delinquency": False,
-            "monthly_free_cash_flow": 24_000,
-            "owner_equity": 82_000,
-            "collateral": 132_000,
-            "market_strength": 72,
-            "monthly_existing_debt": 5_500,
-        },
-        "facts": {
-            "character": "My personal credit score is 690. There is a public-record issue I should disclose: an unpaid tax lien and a contractor judgment.",
-            "capacity": "Free cash flow averages $24,000 a month after operating costs. Current debt service is about $5,500 a month.",
-            "capital": "I have $82,000 of owner equity invested, and I am putting another $30,000 into the van purchase.",
-            "collateral": "The refrigerated vans and other equipment have an estimated resale value of $132,000.",
-            "conditions": "The contract has a two-year initial term, but our three biggest customers generate 64% of revenue.",
-        },
-        "benchmark_context": "Good cash generation and collateral offset a public-record concern and customer concentration.",
-    },
-    {
-        "id": "orbit-forge",
-        "archetype": "THE UNICORN",
-        "company": "Orbit Forge Robotics",
-        "founder": "Daniel Whitfield",
-        "sector": "Industrial robotics",
-        "ask_amount": 220_000,
-        "opening_rate": 6.0,
-        "purpose": "Expand production capacity for a multi-year factory automation contract.",
-        "opening": "We build modular inspection robots for manufacturers. A multi-year factory contract is signed, and $220,000 would let us add a second production cell without slowing delivery.",
-        "public_revenue": 2_400_000,
-        "sandbox_persona": "P02",
-        "sandbox_expected_score": 815,
-        "profile": {
-            "credit_score": 815,
-            "derogatory_count": 0,
-            "thin_file": False,
-            "severe_delinquency": False,
-            "monthly_free_cash_flow": 74_000,
-            "owner_equity": 190_000,
-            "collateral": 184_000,
-            "market_strength": 88,
-            "monthly_existing_debt": 6_000,
-        },
-        "facts": {
-            "character": "My personal credit score is 815, with a long clean history and no public records.",
-            "capacity": "We average $74,000 a month in free cash flow. Existing monthly debt payments are about $6,000.",
-            "capital": "The founders have invested $190,000, and we have enough reserves to cover roughly six months of payroll.",
-            "collateral": "Our production equipment has an estimated resale value of $184,000, separate from the contract receivable.",
-            "conditions": "The factory contract runs for three years and has annual volume commitments. We still rely on one major customer for 38% of sales.",
-        },
-        "benchmark_context": "Strong credit, cash generation, owner investment, and durable contracted demand.",
-    },
-    {
-        "id": "brightline-pantry",
-        "archetype": "THE WILDCARD",
-        "company": "Brightline Pantry Labs",
-        "founder": "Jasmine Reyes",
-        "sector": "Food technology",
-        "ask_amount": 145_000,
-        "opening_rate": 7.0,
-        "purpose": "Fund a pilot production run and secure shelf space with a regional grocer.",
-        "opening": "We make shelf-stable meals from surplus produce. A regional grocer wants to run a pilot, and I need $145,000 to fund production and packaging for the first launch.",
-        "public_revenue": 330_000,
-        "sandbox_persona": "P03",
-        "sandbox_expected_score": 660,
-        "profile": {
-            "credit_score": 660,
-            "derogatory_count": 0,
-            "thin_file": True,
-            "severe_delinquency": False,
-            "monthly_free_cash_flow": 12_000,
-            "owner_equity": 34_000,
-            "collateral": 29_000,
-            "market_strength": 58,
-            "monthly_existing_debt": 2_400,
-        },
-        "facts": {
-            "character": "My personal credit score is 660. I have a short credit history, with only a few accounts reporting.",
-            "capacity": "Free cash flow has averaged $12,000 a month, but that includes one-time pilot revenue. Existing debt payments are $2,400.",
-            "capital": "I have invested $34,000 of personal funds. The business has about two months of operating expenses in reserve.",
-            "collateral": "Packaging equipment and finished goods could support about $29,000 at resale value.",
-            "conditions": "We have interest from one grocer, but no minimum-volume commitment. A larger competitor recently entered this category.",
-        },
-        "benchmark_context": "Thin personal file and uncertain demand call for a smaller, milestone-based facility.",
-    },
-]
+PROFILES = []
+
 
 def _dollars(amount: int) -> str:
     return "$" + f"{amount:,}"
@@ -147,8 +15,9 @@ def _dollars(amount: int) -> str:
 def _crs_presenter(case: dict) -> dict:
     """Turn a CRS synthetic credit persona into a fictional business pitch."""
     profile = case["profile"]
+    # Keep existing session IDs and authored disclosures when a case supplies them.
     return {
-        "id": case["sandbox_persona"].lower(),
+        "id": case.get("id", case["sandbox_persona"].lower()),
         "archetype": case["archetype"],
         "company": case["company"],
         "founder": case["founder"],
@@ -163,9 +32,10 @@ def _crs_presenter(case: dict) -> dict:
         "profile": profile,
         "facts": {
             "character": case["credit_fact"],
-            "capacity": (
+            "capacity": case.get(
+                "capacity_fact",
                 f"We usually have about {_dollars(profile['monthly_free_cash_flow'])} left each month after operating costs, "
-                f"with {_dollars(profile['monthly_existing_debt'])} going to existing debt payments."
+                f"with {_dollars(profile['monthly_existing_debt'])} going to existing debt payments.",
             ),
             "capital": case["capital_fact"],
             "collateral": case["collateral_fact"],
@@ -179,7 +49,127 @@ def _crs_presenter(case: dict) -> dict:
 # cases. Only credit-report facts inform this loan simulation; screening-only
 # criminal and eviction records are not used as lending criteria. P14 is a
 # deceased-file test and is intentionally not a playable presenter.
-PITCHES.extend(_crs_presenter(case) for case in [
+PROFILES.extend(_crs_presenter(case) for case in [
+    {
+        "id": "spindle-loom",
+        "archetype": "THE TRAP",
+        "company": "Spindle & Loom",
+        "founder": "Ricky Dalton",
+        "sector": "Circular textiles",
+        "ask_amount": 160_000,
+        "opening_rate": 9.0,
+        "purpose": "Buy reclaimed-fiber inventory and keep two mills running through the holiday season.",
+        "opening": "We turn discarded fabric into durable workwear. Two regional retailers are ready to expand our orders, and a $160,000 line would let us buy inventory before the season starts.",
+        "public_revenue": 510_000,
+        "sandbox_persona": "P05",
+        "profile": {
+            "credit_score": 540,
+            "derogatory_count": 3,
+            "thin_file": False,
+            "severe_delinquency": True,
+            "monthly_free_cash_flow": 7_000,
+            "owner_equity": 18_000,
+            "collateral": 25_000,
+            "market_strength": 48,
+            "monthly_existing_debt": 3_100,
+        },
+        "credit_fact": "My personal credit is 540. I have two collections and a 90-day late payment. I should have brought that up sooner.",
+        "capacity_fact": "After payroll and suppliers, we keep about $7,000 a month in free cash. Existing monthly debt payments are around $3,100.",
+        "capital_fact": "I have $18,000 of my own cash in the company. Most of our working capital is tied up in inventory.",
+        "collateral_fact": "The looms and finished inventory might support about $25,000 of collateral value today.",
+        "conditions": "Our two largest buyers account for most of the new orders. The seasonal contract is not guaranteed beyond this year.",
+        "benchmark_context": "High personal-credit risk and thin repayment cushion; avoid unless strongly protected.",
+    },
+    {
+        "id": "northstar-cold-chain",
+        "archetype": "THE NEGOTIATOR",
+        "company": "Northstar Cold Chain",
+        "founder": "Priya Venkatesan",
+        "sector": "Food logistics",
+        "ask_amount": 210_000,
+        "opening_rate": 8.0,
+        "purpose": "Add two refrigerated vans for a signed regional distribution contract.",
+        "opening": "We move temperature-sensitive food for independent grocers. A new regional contract is signed, and I need $210,000 for two refrigerated vans to serve it.",
+        "public_revenue": 1_080_000,
+        "sandbox_persona": "P08",
+        "profile": {
+            "credit_score": 690,
+            "derogatory_count": 2,
+            "thin_file": False,
+            "severe_delinquency": False,
+            "monthly_free_cash_flow": 24_000,
+            "owner_equity": 82_000,
+            "collateral": 132_000,
+            "market_strength": 72,
+            "monthly_existing_debt": 5_500,
+        },
+        "credit_fact": "My personal credit score is 690. There is a public-record issue I should disclose: an unpaid tax lien and a contractor judgment.",
+        "capacity_fact": "Free cash flow averages $24,000 a month after operating costs. Current debt service is about $5,500 a month.",
+        "capital_fact": "I have $82,000 of owner equity invested, and I am putting another $30,000 into the van purchase.",
+        "collateral_fact": "The refrigerated vans and other equipment have an estimated resale value of $132,000.",
+        "conditions": "The contract has a two-year initial term, but our three biggest customers generate 64% of revenue.",
+        "benchmark_context": "Good cash generation and collateral offset a public-record concern and customer concentration.",
+    },
+    {
+        "id": "orbit-forge",
+        "archetype": "THE UNICORN",
+        "company": "Orbit Forge Robotics",
+        "founder": "Daniel Whitfield",
+        "sector": "Industrial robotics",
+        "ask_amount": 220_000,
+        "opening_rate": 6.0,
+        "purpose": "Expand production capacity for a multi-year factory automation contract.",
+        "opening": "We build modular inspection robots for manufacturers. A multi-year factory contract is signed, and $220,000 would let us add a second production cell without slowing delivery.",
+        "public_revenue": 2_400_000,
+        "sandbox_persona": "P02",
+        "profile": {
+            "credit_score": 815,
+            "derogatory_count": 0,
+            "thin_file": False,
+            "severe_delinquency": False,
+            "monthly_free_cash_flow": 74_000,
+            "owner_equity": 190_000,
+            "collateral": 184_000,
+            "market_strength": 88,
+            "monthly_existing_debt": 6_000,
+        },
+        "credit_fact": "My personal credit score is 815, with a long clean history and no public records.",
+        "capacity_fact": "We average $74,000 a month in free cash flow. Existing monthly debt payments are about $6,000.",
+        "capital_fact": "The founders have invested $190,000, and we have enough reserves to cover roughly six months of payroll.",
+        "collateral_fact": "Our production equipment has an estimated resale value of $184,000, separate from the contract receivable.",
+        "conditions": "The factory contract runs for three years and has annual volume commitments. We still rely on one major customer for 38% of sales.",
+        "benchmark_context": "Strong credit, cash generation, owner investment, and durable contracted demand.",
+    },
+    {
+        "id": "brightline-pantry",
+        "archetype": "THE WILDCARD",
+        "company": "Brightline Pantry Labs",
+        "founder": "Jasmine Reyes",
+        "sector": "Food technology",
+        "ask_amount": 145_000,
+        "opening_rate": 7.0,
+        "purpose": "Fund a pilot production run and secure shelf space with a regional grocer.",
+        "opening": "We make shelf-stable meals from surplus produce. A regional grocer wants to run a pilot, and I need $145,000 to fund production and packaging for the first launch.",
+        "public_revenue": 330_000,
+        "sandbox_persona": "P03",
+        "profile": {
+            "credit_score": 660,
+            "derogatory_count": 0,
+            "thin_file": True,
+            "severe_delinquency": False,
+            "monthly_free_cash_flow": 12_000,
+            "owner_equity": 34_000,
+            "collateral": 29_000,
+            "market_strength": 58,
+            "monthly_existing_debt": 2_400,
+        },
+        "credit_fact": "My personal credit score is 660. I have a short credit history, with only a few accounts reporting.",
+        "capacity_fact": "Free cash flow has averaged $12,000 a month, but that includes one-time pilot revenue. Existing debt payments are $2,400.",
+        "capital_fact": "I have invested $34,000 of personal funds. The business has about two months of operating expenses in reserve.",
+        "collateral_fact": "Packaging equipment and finished goods could support about $29,000 at resale value.",
+        "conditions": "We have interest from one grocer, but no minimum-volume commitment. A larger competitor recently entered this category.",
+        "benchmark_context": "Thin personal file and uncertain demand call for a smaller, milestone-based facility.",
+    },
     {
         "sandbox_persona": "P01", "founder": "Margaret Okafor", "archetype": "THE PHARMACY BUILDER",
         "company": "Willow Creek Pharmacy", "sector": "Community healthcare",
@@ -199,7 +189,7 @@ PITCHES.extend(_crs_presenter(case) for case in [
         "ask_amount": 125_000, "opening_rate": 9.5, "public_revenue": 620_000,
         "purpose": "Build cold-storage capacity and fulfill new independent-grocer orders.",
         "opening": "Cedar & Coast supplies specialty pantry goods to independent grocers. I’m asking $125,000 for cold storage and inventory to meet new orders.",
-        "profile": {"credit_score": None, "derogatory_count": 0, "thin_file": True, "severe_delinquency": False, "monthly_free_cash_flow": 18_000, "owner_equity": 58_000, "collateral": 76_000, "market_strength": 68, "monthly_existing_debt": 3_000},
+        "profile": {"credit_score": None, "derogatory_count": 0, "thin_file": False, "severe_delinquency": False, "monthly_free_cash_flow": 18_000, "owner_equity": 58_000, "collateral": 76_000, "market_strength": 68, "monthly_existing_debt": 3_000},
         "credit_fact": "I don't really have a credit file yet. The bureaus didn't find one for me, so there's no score to share. That's different from having missed payments.",
         "capital_fact": "I have put $58,000 into the business and kept another $24,000 available for operating needs.",
         "collateral_fact": "Refrigeration equipment and eligible inventory have an estimated resale value of $76,000.",
@@ -225,7 +215,7 @@ PITCHES.extend(_crs_presenter(case) for case in [
         "ask_amount": 195_000, "opening_rate": 13.5, "public_revenue": 1_050_000,
         "purpose": "Replace two service trucks and fund parts inventory for a fleet contract.",
         "opening": "Peachtree services delivery fleets across Atlanta. A new maintenance contract would support two replacement trucks, and I’m seeking $195,000 to put them on the road.",
-        "profile": {"credit_score": 560, "derogatory_count": 2, "thin_file": False, "severe_delinquency": True, "monthly_free_cash_flow": 31_000, "owner_equity": 63_000, "collateral": 132_000, "market_strength": 70, "monthly_existing_debt": 12_500},
+        "profile": {"credit_score": 560, "derogatory_count": 1, "thin_file": False, "severe_delinquency": False, "monthly_free_cash_flow": 31_000, "owner_equity": 63_000, "collateral": 132_000, "market_strength": 70, "monthly_existing_debt": 12_500},
         "credit_fact": "My Chapter 13 repayment plan is active and was filed in 2025. I’m making plan payments, but the filing remains on my credit report.",
         "capital_fact": "I have $63,000 invested in the fleet and repair equipment; current reserves cover about six weeks of expenses.",
         "collateral_fact": "The two service trucks and shop equipment have an estimated resale value of $132,000.",
@@ -265,7 +255,7 @@ PITCHES.extend(_crs_presenter(case) for case in [
         "purpose": "Replace aging delivery vans and cover maintenance on a new route.",
         "opening": "Highland Route delivers medical and retail orders across the county. I’m requesting $105,000 to replace two vans and cover maintenance on a newly awarded route.",
         "profile": {"credit_score": 610, "derogatory_count": 1, "thin_file": False, "severe_delinquency": False, "monthly_free_cash_flow": 16_000, "owner_equity": 37_000, "collateral": 58_000, "market_strength": 57, "monthly_existing_debt": 5_600},
-        "credit_fact": "My CRS credit report shows a 610 score. I can explain my current payment plan, but the file needs a closer look.",
+        "credit_fact": "My credit score is 610. The sandbox public-record case includes a $4,850 judgment.",
         "capital_fact": "I have $37,000 invested in the fleet and keep about $18,000 in working cash.",
         "collateral_fact": "The delivery vans and route equipment have an estimated resale value of $58,000.",
         "conditions": "The new route has a six-month review clause, and vehicle repairs have been taking more cash than planned.",
@@ -277,7 +267,7 @@ PITCHES.extend(_crs_presenter(case) for case in [
         "ask_amount": 160_000, "opening_rate": 10.0, "public_revenue": 860_000,
         "purpose": "Add a loading dock and fund fuel for a new regional distribution route.",
         "opening": "Meridian moves palletized goods between neighborhood suppliers and regional depots. I’m seeking $160,000 to add a dock and start a new route.",
-        "profile": {"credit_score": None, "derogatory_count": 0, "thin_file": True, "severe_delinquency": False, "monthly_free_cash_flow": 29_000, "owner_equity": 71_000, "collateral": 88_000, "market_strength": 66, "monthly_existing_debt": 6_500},
+        "profile": {"credit_score": None, "derogatory_count": 0, "thin_file": False, "severe_delinquency": False, "monthly_free_cash_flow": 29_000, "owner_equity": 71_000, "collateral": 88_000, "market_strength": 66, "monthly_existing_debt": 6_500},
         "credit_fact": "The name and Social Security number don't line up in the synthetic file, so the bureaus couldn't match me. I'd want to clear up that identity check before you rely on a score.",
         "capital_fact": "I have $71,000 invested in vehicles and dock equipment, plus a $25,000 operating reserve.",
         "collateral_fact": "The trucks, dock equipment, and eligible receivables have an estimated support value of $88,000.",
@@ -291,7 +281,7 @@ PITCHES.extend(_crs_presenter(case) for case in [
         "purpose": "Expand a neighborhood market's prepared-food counter and cold cases.",
         "opening": "Kingston Market pairs local pantry goods with prepared meals. I’m seeking $120,000 for cold cases and a larger kitchen so we can serve nearby offices.",
         "profile": {"credit_score": 640, "derogatory_count": 0, "thin_file": True, "severe_delinquency": False, "monthly_free_cash_flow": 22_000, "owner_equity": 54_000, "collateral": 62_000, "market_strength": 65, "monthly_existing_debt": 4_100},
-        "credit_fact": "My score is 640, but I don't have many accounts on file yet. There aren't any reported delinquencies; there's just less history to go on.",
+        "credit_fact": "My credit score is 640 and the file is thin. The sandbox case also flags 9 inquiries in 60 days and identity inconsistencies involving the email, phone, and IP address; those need verification.",
         "capital_fact": "I have invested $54,000 and kept about $28,000 in cash for the expansion.",
         "collateral_fact": "Kitchen equipment, refrigeration, and eligible inventory have an estimated resale value of $62,000.",
         "conditions": "Office lunch demand is promising, but the new kitchen has not yet demonstrated a full year of sales.",
@@ -378,22 +368,58 @@ PITCHES.extend(_crs_presenter(case) for case in [
 ])
 
 MAX_OPENING_WORDS = 32
-if any(len(pitch["opening"].split()) > MAX_OPENING_WORDS for pitch in PITCHES):
+if any(len(pitch["opening"].split()) > MAX_OPENING_WORDS for pitch in PROFILES):
     raise ValueError(f"Every catalog opening pitch must stay within {MAX_OPENING_WORDS} words.")
 
 
 SHARKS = [
     {
         "id": "kevin", "name": "Kevin O'Leary", "title": "Terms-first investor", "color": "#f2bd6c", "max_grade": 3, "capital": 185_000,
-        "ai_profile": {"focus": "return, downside protection, and pricing", "voice": "blunt, concise, and skeptical; brings discussion back to price, repayment, and downside protection", "game_note": "A fictionalized game profile; not a real-person simulation."},
+        "ai_profile": {
+            "focus": "repayment reliability, cash generation, customer concentration, and lender downside",
+            "voice": "blunt, financially specific, and skeptical of unsupported optimism; challenge assumptions without belittling the founder",
+            "system_prompt": (
+                "Use a fictional Kevin-inspired commercial lens. His public career includes consumer software marketing, acquisitions, "
+                "and investment businesses; his public pitch discussions emphasize challenging a founder's business assumptions. "
+                "Connect the assigned topic to dependable repayment and recovery if the plan disappoints. Distinguish sales or an "
+                "appealing story from money available to repay a loan. Ask for the weakest missing piece of evidence, firmly but "
+                "without insults. In a reaction, identify a remaining downside or acknowledge a specific protection; do not reflexively "
+                "reject the business. Treat these as game-design priorities, not claims about his private lending policy."
+            ),
+            "game_note": "A fictionalized game profile; not a real-person simulation.",
+        },
     },
     {
         "id": "lori", "name": "Lori Greiner", "title": "Product & retail investor", "color": "#86d7c4", "max_grade": 4, "capital": 145_000,
-        "ai_profile": {"focus": "product clarity, customer demand, and execution", "voice": "curious, encouraging, and practical; probes who buys, why they return, and whether delivery can scale", "game_note": "A fictionalized game profile; not a real-person simulation."},
+        "ai_profile": {
+            "focus": "customer need, repeat demand, product delivery, and cash tied up in fulfilling orders",
+            "voice": "encouraging, observant, and practical; acknowledge concrete strengths, then probe an unresolved execution detail",
+            "system_prompt": (
+                "Use a fictional Lori-inspired product-to-market lens. Her public background covers invention, manufacturing, "
+                "patents, and selling consumer products through retail and television. Examine who needs the offering, evidence of "
+                "repeat demand, and whether the business can reliably deliver what it sells. Connect the assigned topic to inventory, "
+                "fulfillment, or cash timing only where relevant to the supplied business. For a service company, examine service "
+                "delivery rather than forcing a retail-product question. Be supportive without treating enthusiasm as evidence. "
+                "In a reaction, recognize a concrete strength or practical gap. Never promise distribution, introductions, or personal help."
+            ),
+            "game_note": "A fictionalized game profile; not a real-person simulation.",
+        },
     },
     {
         "id": "mark", "name": "Mark Cuban", "title": "Scale & operations investor", "color": "#b5a1ff", "max_grade": 3, "capital": 230_000,
-        "ai_profile": {"focus": "operating leverage, customer concentration, and scale", "voice": "direct, analytical, and growth-minded; asks what breaks during expansion and how the business keeps its edge", "game_note": "A fictionalized game profile; not a real-person simulation."},
+        "ai_profile": {
+            "focus": "founder execution, repeatable sales, operating bottlenecks, and durable competitive demand",
+            "voice": "direct, energetic, and analytical; test how the business works rather than rewarding buzzwords or projections",
+            "system_prompt": (
+                "Use a fictional Mark-inspired execution lens. His public background includes software systems and building media "
+                "businesses; his Shark Tank writing distinguishes pitch claims from later due diligence. Test whether the founder "
+                "understands how sales, delivery, costs, and competition fit together. Connect the assigned topic to an operating "
+                "bottleneck or how reliable cash generation survives growth. Distinguish demonstrated traction from a forecast, "
+                "without assuming a specific technology or growth rate. Be direct and curious rather than dismissive. In a reaction, "
+                "identify an execution tradeoff, and acknowledge when the supplied evidence resolves a concern."
+            ),
+            "game_note": "A fictionalized game profile; not a real-person simulation.",
+        },
     },
 ]
 
@@ -405,7 +431,7 @@ SHARK_QUESTIONS = [
 
 
 def get_pitch(pitch_id: str) -> dict:
-    for pitch in PITCHES:
+    for pitch in PROFILES:
         if pitch["id"] == pitch_id:
             return deepcopy(pitch)
     raise KeyError(pitch_id)

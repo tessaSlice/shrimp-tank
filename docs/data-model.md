@@ -14,6 +14,8 @@ FastAPI GameSession
 
 The message rows are a deliberate indexed copy of the transcript already present in `stateJson`. The snapshot makes session restore simple; the separate rows provide a path for transcript lookup by session, pitch, and order. The current Python adapter restores messages from `stateJson` and does not query `conversation_message`.
 
+The active snapshot holds only the current pitch's `messages`. Starting the next pitch clears that list. `completed` retains profiles, assessments, benchmarks, offers, and results, but not a copy of each earlier transcript. Older transcript rows remain separately in `conversation_message` until their session is explicitly deleted or expires; there is currently no API read path or browser archive that loads them. A complete restorable game state is therefore not the same as a currently readable session-wide conversation history.
+
 ## `game_session`
 
 One row stores the current restorable state for a game session.
@@ -28,39 +30,237 @@ One row stores the current restorable state for a game session.
 
 The JSON corresponds to [`GameSession`](../backend/app/main_types.py). Its fields are:
 
-| Field | Python shape | Purpose |
-| --- | --- | --- |
-| `session_id` | `str` | Session identity. |
-| `total_pitches` | `int` | Number of pitches selected for this session. |
-| `difficulty` | `str` | Starting-capital setting. |
-| `starting_capital` | `int` | Initial player capital. |
-| `pitch_queue` | `list[str]` | Ordered pitch IDs selected for this session. |
-| `pitch_index` | `int` | Zero-based current pitch position. |
-| `round_number` | `int` | Current investigation round. |
-| `phase` | `str` | Current transition state. The code currently sets `investigate`, `pitch_review`, and `pitch_result`; it does not set `complete`. |
-| `balance` | `int` | Current available capital. |
-| `pitch` | `dict` | Active pitch, including private fictional borrower data needed by backend rules. |
-| `messages` | `list[dict]` | Active pitch's full ordered transcript. |
-| `disclosures` | `list[str]` | Topics already surfaced in the active pitch. |
-| `offers` | `list[dict]` | Offers and their current statuses for the active pitch. |
-| `completed` | `list[dict]` | Resolved pitch summaries used by the final scorecard. |
-| `human_out` | `bool` | Whether the human player has left bidding for this pitch. |
-| `question_asked` | `bool` | Whether the player has used the question turn for this round. |
-| `pending_result` | `dict \| null` | Pending deal result held until the review/reveal step. |
-| `result` | `dict \| null` | Published result for the current pitch. |
-| `scorecard` | `dict \| null` | Computed when the final pitch resolves. The public state withholds it during `pitch_review`, then returns it after the founder's decision is revealed. |
-| `persistence_version` | `str` | Last accepted SpacetimeDB version used for optimistic concurrency. |
-| `created_at` | ISO-8601 `str` | Session creation time in UTC. |
+| Field | Python shape | Purpose | Origin / producer |
+| --- | --- | --- | --- |
+| `session_id` | `str` | Session identity. | System-generated UUID. |
+| `total_pitches` | `int` | Number of pitches selected for this session. | Player selection, validated by FastAPI. |
+| `difficulty` | `str` | Starting-capital setting. | Player selection, validated by FastAPI. |
+| `starting_capital` | `int` | Initial player capital. | AI synthesized game configuration; selected by difficulty. |
+| `pitch_queue` | `list[str]` | Ordered pitch IDs selected for this session. | System sampling of the catalog's CRS/AI synthesized scenario IDs. |
+| `pitch_index` | `int` | Zero-based current pitch position. | System-managed progression counter. |
+| `round_number` | `int` | Current investigation round. | System-managed negotiation counter. |
+| `phase` | `str` | Current transition state. The code currently sets `investigate`, `pitch_review`, and `pitch_result`; it does not set `complete`. | System-managed state machine. |
+| `balance` | `int` | Current available capital. | Calculated from configured starting capital and accepted player offers. |
+| `pitch` | `dict` | Active pitch, including private fictional borrower data needed by backend rules. | CRS and AI synthesized inputs; every nested field is classified below. |
+| `messages` | `list[dict]` | Active pitch's full ordered transcript. | Player input, Grok output, templates, or system text; see the message-origin table. |
+| `disclosures` | `list[str]` | Topics already surfaced in the active pitch. | System routing labels from questions and scripted turn topics. |
+| `offers` | `list[dict]` | Offers and their current statuses for the active pitch. | Player terms or rule-generated investor terms; see the offer-origin table. |
+| `completed` | `list[dict]` | Resolved pitch summaries used by the final scorecard. | Copied profile inputs plus calculated pitch results; see completed-pitch fields. |
+| `human_out` | `bool` | Whether the human player has left bidding for this pitch. | Player action recorded by the backend. |
+| `question_asked` | `bool` | Whether the player has used the question turn for this round. | System flag updated when a player's question is accepted. |
+| `pending_result` | `dict \| null` | Pending deal result held until the review/reveal step. | Python deal selection from profile assessment and submitted offers. |
+| `result` | `dict \| null` | Published result for the current pitch. | The pending result moved to revealed state; no new source data. |
+| `scorecard` | `dict \| null` | Computed when the final pitch resolves. The public state withholds it during `pitch_review`, then returns it after the founder's decision is revealed. | Python calculations over completed profiles and player/investor outcomes. |
+| `persistence_version` | `str` | Last accepted SpacetimeDB version used for optimistic concurrency. | System write-version metadata. |
+| `created_at` | ISO-8601 `str` | Session creation time in UTC. | System UTC timestamp. |
+
+### Profile and offer lifecycle
+
+The session's `pitch_queue` records IDs sampled without replacement from the full 19-entry `PROFILES` catalog. Every case is formatted through `_crs_presenter`; the four descriptive legacy IDs are preserved so stored queues still resolve through `get_pitch`. `_start_pitch` deep-copies one catalog entry into `pitch`, resets round/disclosure/offer flags, and creates the authored opening message. Neither a Grok response nor a database reducer generates or updates borrower financial facts. `_finish_pitch` copies the profile, assessment, benchmark, and offer records into `completed`; the final pitch also populates `scorecard`. There is no dedicated raw-CRS-report, bureau-merge, verification-hold, learner-skill, or repayment-outcome table.
+
+Offers in the snapshot have stable IDs, investor identity, terms, round, and current status. A replacement bid withdraws a previous pending human bid; pass leaves it pending; leaving withdraws it. Resolution marks a winner accepted and other pending offers rejected. The records preserve submitted offers with their final/current statuses, not an immutable timestamped history of every status transition. The public projection shows only pending or accepted offers. Human bid submissions are not separately appended as full transcript utterances; AI offers are formatted into messages.
 
 The in-process `asyncio.Lock` on `GameSession` is intentionally not serialized. Locks coordinate requests inside one FastAPI process; they are not durable game state. `updatedAt` plus `expectedUpdatedAt` provides a database-side stale-write check between processes.
 
+The snapshot is not a complete configuration/provenance history. There are no dedicated fields for the Grok model or prompt revision, application commit, or resolved dependency versions. The [investor personality prompts](shark-personalities.md) are application configuration in `catalog.py` and `agents.py`; SpacetimeDB stores their generated dialogue, not a separate personality/prompt table. Restoring `GameSession` from JSON uses the dataclass constructor, not the Pydantic request models used at the API boundary. The reducer receives `stateJson` as a string and does not independently validate every nested field or recompute game rules. These distinctions also apply to the stored scorecard described in [Scorecard Logic](scorecard-logic.md).
+
 The backend also defines `GET /api/sessions/{session_id}/scorecard`, which requires `phase == "complete"`. No current transition sets that phase, and the frontend does not call this route; it reads the scorecard from the session after the final pitch result is revealed.
+
+### Public response and reveal boundaries
+
+`_public_state` omits the raw profile and pending-result object. It includes pitch identity/archetype, current messages, disclosure labels, balance, and pending/accepted offers. Review withholds `result` and `scorecard`, but resolution has already changed offer statuses and deducted accepted human principal, so those fields can reveal the winner before the reveal control. After reveal, `result` includes grade/risk label even though the result screen does not print them. This projection is not strict concealment of all assessment/outcome information.
 
 ### Why a JSON snapshot
 
 The current game logic reads and mutates one Python session object. Saving that object as a snapshot makes restart recovery small and keeps pitch, offers, review phase, and transcript consistent with the existing backend model. The tradeoff is that individual game fields are opaque to SpacetimeDB SQL and a state transition rewrites the snapshot. This is suitable for the current single-player game; multiplayer tables and finer-grained updates can be introduced when their access and authorization rules are defined.
 
 The table is private. `stateJson` contains hidden fictional credit profiles and pending results, so exposing it through a public subscription would reveal information the player is meant to discover through play. The deployed FastAPI service accesses it with the server-side SpacetimeDB token.
+
+## Founder field origins
+
+The distinctions below apply to all 19 playable entries in [`catalog.py`](../backend/app/catalog.py). **No founder fields are fetched from MCP or the CRS sandbox during gameplay.** The MCP tools expose synthetic persona descriptions, request examples, and expected product outcomes. The catalog stores local copies/adaptations of that information alongside fictional business inputs.
+
+**CRS** identifies information supported by the attached MCP server's `get_personas` and credit-report `get_test_data` output reviewed on October 25, 2026. It does not mean the app queried CRS's internal database or imported a full report. All source personas are synthetic.
+
+**AI synthesized** is the project's requested documentation assumption for borrower/scenario information that cannot be obtained directly from the CRS interface. It includes fixed fictional financial inputs, authored narrative, and local risk proxies without a directly imported CRS field. This classification does not establish historical AI authorship or imply an AI request occurs when those values are loaded. These inputs are currently literals in the catalog.
+
+For calculated results, the tables identify the underlying **CRS**, **AI synthesized**, or combined inputs and name the Python calculation. Player inputs and system metadata are identified separately because their actual producers are known; a UUID, a round counter, or a typed player offer is not an AI-generated borrower fact. SpacetimeDB persists all of these origins without changing them.
+
+### Catalog and numeric profile fields
+
+Paths below are relative to the active `GameSession.pitch`, which is nested in `game_session.stateJson`. `profile` and `facts` are JSON dictionaries, not separate SpacetimeDB tables.
+
+| Stored field | Origin | How the application obtains it |
+| --- | --- | --- |
+| `sandbox_persona` | CRS | Bundled persona ID, such as P01. |
+| `founder` | CRS; name formatting only | Synthetic persona name, with title-case formatting rather than MCP's uppercase text. |
+| `id` | System identifier derived from CRS or the AI synthesized business | An explicit legacy business ID for four cases; otherwise the lowercase persona ID produced by `_crs_presenter`. |
+| `company` | AI synthesized | The named company is part of the game scenario. |
+| `sector` | AI synthesized; P19's broad café premise is CRS-backed | The chosen industry is a game input. P19's general café-owner premise also appears in MCP; its named business and financial details remain fictional. |
+| `archetype` | AI synthesized | A game description such as THE TRAP; not a CRS decision or classification. |
+| `ask_amount`, `opening_rate` | AI synthesized | Fictional loan principal requested and opening annual rate. |
+| `public_revenue` | AI synthesized | Fictional business revenue; not a value extracted from a bureau report. |
+| `purpose`, `opening` | AI synthesized | The use of funds and opening pitch, fixed in the catalog rather than generated by Grok each session. |
+| `profile.credit_score` | CRS; score selection/no-score representation is local | Fixed score matching the persona's expected credit result. `None` represents no usable score. P15 selects the available 740; P17 selects TransUnion's 760. The per-persona table below records the bureau distinctions. |
+| `profile.derogatory_count` | AI synthesized, CRS-informed proxy | A scalar count selected to represent collections, late-payment events, charge-offs, or public records. It is not a copied CRS field with an implemented report parser or bureau-deduplication rule. |
+| `profile.thin_file` | AI synthesized, CRS-informed proxy | True for the scored thin-file cases P03 and P13. A no-hit case is not encoded as a thin file. |
+| `profile.severe_delinquency` | AI synthesized, CRS-informed proxy | True for P05's reported 90-day delinquency. An active bankruptcy plan is not itself encoded as a severe late payment. False means the model does not apply this flag; it is not independent verification of a clean file. |
+| `profile.monthly_free_cash_flow` | AI synthesized | Fictional monthly business cash flow after operating costs. |
+| `profile.monthly_existing_debt` | AI synthesized | Fictional monthly business debt service. No code sums bureau tradeline payments into this value. |
+| `profile.owner_equity` | AI synthesized | Fictional owner investment; not a balance pulled from CRS. |
+| `profile.collateral` | AI synthesized | Fictional estimated business collateral value; not a bureau balance or an independently obtained appraisal. |
+| `profile.market_strength` | AI synthesized | A configured 0–100 scenario value, not a CRS market score. |
+| `sandbox_expected_score` | CRS-derived copy of the selected score | `_crs_presenter` copies `profile.credit_score`; this is not a second retrieval or independent check. |
+| `benchmark_context` | AI synthesized | Commentary attached to the case. `assess` and `benchmark` do not read it. |
+
+The AI synthesized numeric inputs are fixed catalog data, not new Grok outputs on each turn. Only the score/status has a directly matched CRS value here; the three credit-risk flags are local mappings informed by CRS case descriptions rather than imported database columns. The business financial values have no CRS mapping.
+
+### Five-Cs disclosure fields
+
+The helper's input keys `credit_fact`, `capacity_fact`, `capital_fact`, `collateral_fact`, and `conditions` become the `facts` dictionary used for dialogue.
+
+| Stored field | Origin |
+| --- | --- |
+| `facts.character` | AI synthesized wording using CRS credit/public-record/identity facts; not verbatim report text. |
+| `facts.capacity` | AI synthesized business figures and wording. An explicit `capacity_fact` is preserved; otherwise the helper formats cash flow and debt service into a sentence. |
+| `facts.capital` | AI synthesized equity, reserve, and contribution figures and wording. |
+| `facts.collateral` | AI synthesized asset descriptions and estimated support values. |
+| `facts.conditions` | AI synthesized market/customer/contract details and wording; may incorporate CRS-backed credit or identity cautions. |
+
+Grok receives selected disclosures and can phrase them conversationally. It does not populate or update these stored disclosure fields.
+
+### CRS information represented by each persona
+
+Names and score/status facts below were checked against the MCP persona details and credit-report test expectations. Scores are expected synthetic outcomes, not newly ordered report results. A no-hit, freeze, or unscored returned file is a distinct source condition even when the current numeric model uses a single score or `None`.
+
+| Persona / founder | CRS facts represented in the catalog | Stored `profile.credit_score` |
+| --- | --- | --- |
+| P01 — Margaret Okafor | Clean credit, 790 at all three bureaus. | 790 |
+| P02 — Daniel Whitfield | Clean credit, 815 at all three bureaus. | 815 |
+| P03 — Jasmine Reyes | Thin file, 660 at all three bureaus. | 660 |
+| P04 — Tomas Lindqvist | No file found at all three bureaus. | `None` |
+| P05 — Ricky Dalton | 540 at all three bureaus; two collections and a 90-day late payment. | 540 |
+| P06 — Angela Morrissey | 580 at all three bureaus; Chapter 7 discharged in 2024 and rebuilding with a secured card. | 580 |
+| P07 — Marcus Bellamy | 560 at all three bureaus; one active Chapter 13 bankruptcy filed in 2025, with plan payments as agreed. | 560 |
+| P08 — Priya Venkatesan | 690 at all three bureaus; PitchPoint identifies a tax lien and a contractor judgment. | 690 |
+| P09 — Derek Holloway | Clean credit, 700 at all three bureaus. | 700 |
+| P10 — Lauren Kowalczyk | Clean credit, 720 at all three bureaus. | 720 |
+| P11 — Brandon Szabo | 610 at all three bureaus; PitchPoint identifies a $4,850 judgment. | 610 |
+| P12 — Victor Anand | Identity mismatch and no bureau file matched. | `None` |
+| P13 — Kayla Brennan | Thin file, 640; persona also describes 9 inquiries in 60 days and email/phone/IP identity inconsistencies. | 640 |
+| P14 — Harold Pettigrew | Deceased error at all three bureaus. Excluded from the playable catalog. | Not stored |
+| P15 — Nicole Farragut | TransUnion frozen; Equifax and Experian each 740. | 740 |
+| P16 — Samuel Oyelaran | 730 at all three bureaus. The persona describes a fraud alert, but the credit-report test expectations say the alert is not reproduced in those reports. | 730 |
+| P17 — Elena Castellanos | TransUnion 760; Equifax no file; Experian 700 with one charge-off in the per-product test expectations. | 760 |
+| P18 — Terrence Abernathy | 650 at all three bureaus; two 2020 charge-offs later paid, with no newer negative activity described. | 650 |
+| P19 — Grace Nakamura | Clean credit, 770 at all three bureaus; general café-owner premise. | 770 |
+| P20 — Dolores Whitcomb | Returned stale file with no score; closed accounts and no recent activity. | `None` |
+
+The table identifies supported facts, not complete persona/report replication. For example, the current P17 scalar combines the TransUnion score with a derogatory count informed by Experian; there is no implemented multi-bureau merge algorithm. Criminal/eviction screening outcomes and the MCP persona's general APPROVE/REVIEW/DECLINE label are not directly copied into the game's loan decision or scorecard grade.
+
+For every playable row, company-specific loan terms, revenue, cash flow, existing business debt, owner equity, collateral, and market strength are classified as AI synthesized. Customer concentration, reserve amounts, and signed contracts are also AI synthesized scenario information. The three normalized credit-risk flags are AI synthesized/CRS-informed for every row, even where they agree with the persona narrative.
+
+### Which CRS information affects the risk score
+
+The borrower risk grade is calculated by `assess(profile, ask_amount)` in [`underwriting.py`](../backend/app/underwriting.py). It reads all nine numeric/boolean profile inputs and the requested principal. The source split is:
+
+| Component | Weight | Inputs read | Source of those inputs | Implemented calculation |
+| --- | --- | --- | --- | --- |
+| Character | 30% | `profile.credit_score`, `profile.derogatory_count`, `profile.thin_file`, `profile.severe_delinquency` | CRS score/no-score outcome plus three AI synthesized, CRS-informed proxies. | With a score: clamp `(credit_score - 300) / 5.5 - 4 * derogatory_count` to 0–100, subtract 12 for a thin file and clamp again, then subtract 20 for severe delinquency and clamp again. Without a score: use 50 and skip the flag penalties. |
+| Capacity | 25% | `profile.monthly_free_cash_flow`, `profile.monthly_existing_debt`, `ask_amount` | AI synthesized. | Estimated payment = `ask_amount * 0.034`; DSCR = cash flow / `max(1, estimated payment + existing debt)`; component = `DSCR / 2.4 * 100`, clamped to 0–100. |
+| Capital | 15% | `profile.owner_equity`, `ask_amount` | AI synthesized. | `(owner_equity / max(1, ask_amount)) / 0.6 * 100`, clamped to 0–100. |
+| Collateral | 15% | `profile.collateral`, `ask_amount` | AI synthesized. | `(collateral / max(1, ask_amount)) / 0.9 * 100`, clamped to 0–100. |
+| Conditions | 15% | `profile.market_strength` | AI synthesized. | Clamp the configured market-strength value to 0–100. |
+
+Each component is rounded before the weighted total is calculated and rounded. Grades 1–5 use total-score thresholds of 84, 68, 52, and 36. Those thresholds, weights, penalty amounts, and scaling constants are local model configuration, classified as AI synthesized design assumptions; Python applies them deterministically.
+
+**CRS contributes directly to the Character input through the selected credit score or its absence.** Collections, late payments, charge-offs, bankruptcy, and public-record details inform the three local proxies, but the scoring function does not read original report events, record dates, bureau models, or liens/judgments individually. Names and persona IDs identify a case and do not affect its grade. The narrative `facts`, `benchmark_context`, `public_revenue`, and `sandbox_expected_score` are not inputs to `assess`.
+
+The other four components account for 70% of the configured weight and use AI synthesized financial/market inputs. The remaining 30% is mixed because Character also applies local proxies. These weights describe the game's formula, not a measured percentage of validated underwriting evidence. A no-score case receives the fixed Character value of 50.
+
+A different calculation scores the player's decision in the final scorecard. It combines benchmark-rate fit/outcome rules with illustrative profit/loss rules using the calculated grade and offer terms. Grok neither selects the borrower's grade nor calculates the player's score. Exact decision and return formulas are in [Scorecard Logic](scorecard-logic.md#five-cs-assessment-and-benchmark).
+
+### Stateful assessments, completed profiles, and results
+
+These fields preserve or calculate information from the source inputs above. They are held inside the session JSON rather than in dedicated borrower or assessment tables.
+
+| Stateful field | Source / producer |
+| --- | --- |
+| `completed[].pitch_id` | Copy of the scenario's system identifier. |
+| `completed[].company`, `completed[].archetype` | Copies of AI synthesized scenario content. |
+| `completed[].profile` | Copy of the full nine-field profile; each field keeps its CRS or AI synthesized classification from the numeric-field table. |
+| `completed[].credit_score` | Copy of the CRS-matched selected score/no-score value. |
+| `completed[].assessment` | Python result calculated from mixed CRS and AI synthesized inputs; its nested fields are listed below. |
+| `completed[].benchmark` | Python result based on that assessment and AI synthesized ask/collateral inputs. |
+| `completed[].offers`, `completed[].player_offer` | Offer records copied from player input or configured investor rules; see the offer table below. |
+| `completed[].winner`, `completed[].decision` | Python deal-selection result from eligible offers and configured founder-preference rules. Not a CRS decision label or a Grok choice. |
+| `pending_result.outcome`, `pending_result.winner`, `pending_result.winner_name` | Deal-selection result and selected investor identity. |
+| `pending_result.grade`, `pending_result.risk_label` | Copies of the calculated assessment grade and its configured label. |
+| `pending_result.message` | Application-formatted text using founder identity and the chosen offer/result. |
+| `result` | Same fields as `pending_result`, moved to the revealed result without generating a new assessment. |
+
+An assessment has the following stored fields. `assessment.components` contains the five calculated component scores; `assessment.explanations` contains their configured or application-formatted explanatory text.
+
+| Assessment field | Source / producer |
+| --- | --- |
+| `assessment.components.character` | Calculated from the CRS score/status and AI synthesized credit proxies. |
+| `assessment.components.capacity`, `assessment.components.capital`, `assessment.components.collateral`, `assessment.components.conditions` | Calculated from the AI synthesized inputs in the component table. |
+| `assessment.weights` | Configured Character/Capacity/Capital/Collateral/Conditions weights of .30/.25/.15/.15/.15. |
+| `assessment.score`, `assessment.grade` | Weighted total and threshold calculation over mixed CRS and AI synthesized inputs. |
+| `assessment.label`, `assessment.target_rate` | Configured grade lookup. Target rates are 6.5%, 9%, 12.5%, 17%, and no lending target for grade 5. |
+| `assessment.explanations.character` | Configured text selected according to whether the CRS-matched score is available. |
+| `assessment.explanations.capacity`, `assessment.explanations.capital`, `assessment.explanations.collateral` | Application-formatted ratios calculated from AI synthesized financial inputs. |
+| `assessment.explanations.conditions` | Configured explanatory text. |
+| `assessment.dscr` | Rounded debt-service coverage calculated from AI synthesized cash flow, debt service, and requested principal. |
+
+A benchmark has four fields: `benchmark.action` follows the calculated grade, `benchmark.amount` follows local capacity/collateral rules, `benchmark.rate` uses the configured grade-rate lookup, and `benchmark.reason` is configured text. Its inputs combine CRS and AI synthesized scenario data; no benchmark field is a retrieved CRS lending recommendation.
+
+### Stateful offers, messages, and scorecards
+
+Human offer terms are known player inputs. Investor offer terms are produced by Python rules, even though the characters use Grok for dialogue.
+
+| Offer field | Source / producer |
+| --- | --- |
+| `offers[].id` | System-generated UUID. |
+| `offers[].investor_id`, `offers[].investor`, `offers[].kind` | Player label or configured investor identity/type; not CRS borrower data. |
+| `offers[].amount`, `offers[].rate`, `offers[].royalty`, `offers[].term_months`, `offers[].secured` | Player input for a human offer; for investor offers, Python combines the AI synthesized ask, configured investor budget/rate rules, and mixed-source calculated grade. Grok does not generate these terms. |
+| `offers[].round`, `offers[].status` | System-managed submission round and negotiation state. |
+| `messages[].id` | System-generated UUID, copied into `conversation_message.messageId`. |
+| `messages[].speaker` | Player/system label, configured investor name, or CRS-matched founder name. |
+| `messages[].kind`, `messages[].round` | System-assigned message category and current round. |
+| `messages[].source` | System-assigned provider/origin label: `xai` or `offline` for exchanges; the persistence adapter defaults unlabeled messages to `system`. |
+| `messages[].text` with `source: "xai"` | AI synthesized by Grok using selected CRS/AI synthesized facts and conversational context. |
+| Other `messages[].text` | Player question, fixed AI synthesized opening/template text, system notice, or application-formatted offer data, according to message kind. |
+| `disclosures[]` | System-maintained five-Cs topic labels selected by question routing and turn rules. They do not certify a new API retrieval or change the underlying profile. |
+
+The transcript adapter copies the message fields into `conversation_message`. Its `sessionId`, `pitchId`, `pitchIndex`, `sequence`, and `roundNumber` come from session identifiers/counters and list order. `speaker`, `kind`, `text`, and `source` retain the message origins above. Persisting Grok text in SpacetimeDB does not make its underlying financial claims CRS data.
+
+The final scorecard stores these additional fields:
+
+| Scorecard field | Source / producer |
+| --- | --- |
+| `scorecard.pitches[].pitch_id`, `scorecard.pitches[].company`, `scorecard.pitches[].archetype` | Copied scenario identifier and AI synthesized business descriptors. |
+| `scorecard.pitches[].credit_score` | Copied CRS-matched selected score/no-score value. |
+| `scorecard.pitches[].derogatory_count`, `scorecard.pitches[].monthly_free_cash_flow`, `scorecard.pitches[].owner_equity`, `scorecard.pitches[].collateral` | Copied AI synthesized profile inputs; derogatory count is CRS-informed. |
+| `scorecard.pitches[].grade`, `scorecard.pitches[].risk_label`, `scorecard.pitches[].assessment`, `scorecard.pitches[].benchmark` | Copied calculated assessment and benchmark with mixed CRS/AI synthesized inputs. |
+| `scorecard.pitches[].decision`, `scorecard.pitches[].winner`, `scorecard.pitches[].player_offer` | Copied negotiation outcomes and player offer input. |
+| `scorecard.pitches[].expected_profit`, `scorecard.pitches[].decision_score` | Python calculations using actual game offers/outcomes and configured grade-based loss/pricing assumptions. |
+| `scorecard.pitches[].feedback` | Configured text selected by the score/outcome rules. |
+| `scorecard.pitches` | Array of the per-pitch fields listed above. |
+| `scorecard.decision_accuracy`, `scorecard.overall_score`, `scorecard.expected_profit`, `scorecard.projected_ending_capital` | Aggregation/return calculations from completed pitches and configured starting capital. Underlying borrower evidence remains mixed CRS/AI synthesized. |
+| `scorecard.deals_funded` | System count of deals won by the player. |
+| `scorecard.starting_capital` | Copy of the AI synthesized game setting selected by difficulty. |
+| `scorecard.notice` | Configured explanatory text. |
+
+`starting_capital` is stored on the session and scorecard; the current `balance` is a session field. Requested pitch count, difficulty, progress counters, flags, timestamps, and persistence versions retain the producers listed in the `stateJson` table. The in-process `lock` is not persisted.
+
+### What reading from SpacetimeDB means for origin
+
+A read of `game_session.stateJson` restores previously stored CRS copies, AI synthesized inputs/text, player choices, and calculated results. SpacetimeDB is the persistence destination, not an independent source of borrower evidence. Its `sessionId` and `updatedAt` are system identifiers/version metadata; `stateJson` is the serialized state.
+
+The schema currently has no per-field origin column or retained raw-report table. `conversation_message.source` identifies dialogue origin, not the origin of each financial fact mentioned in a sentence. The classifications above are documentation conventions, not added database columns or an implemented import pipeline.
+
+Catalog changes apply when a case is loaded. Already saved active profiles, completed assessments, and scorecards are not automatically rewritten; restoring an existing session restores its stored values. See [Scorecard Logic](scorecard-logic.md) for the calculations.
 
 ## `conversation_message`
 
@@ -79,6 +279,8 @@ One row stores one transcript entry. Rows remain in the table as the active pitc
 | `text` | `string` |  | The complete utterance. The generated exchange is written only after the full response passes validation; the database is not updated token by token while Grok streams. |
 | `source` | `string` |  | Provenance label for generated lines: current values are `xai` and `offline`; the adapter uses `system` when a message has no source label. |
 
+`source` is a provider/origin label, not a model-version or source-report audit record. The reducer can update an existing message's fields, including its text, so this table is an indexed transcript copy rather than an immutable event log. Stable message IDs make repeat upserts of those rows idempotent; they do not give incoming HTTP actions an exactly-once execution guarantee.
+
 The table has a B-tree index named `by_session_pitch_sequence` over `(sessionId, pitchIndex, sequence)`. This index is shaped for an ordered transcript query: find a session, select a pitch, and read its messages in display order. The application does not issue that query yet; it currently restores the transcript from the `game_session.stateJson` snapshot. Message IDs are primary keys so repeating a session upsert updates the same message instead of duplicating it.
 
 ### Why store transcript rows separately
@@ -86,6 +288,42 @@ The table has a B-tree index named `by_session_pitch_sequence` over `(sessionId,
 The JSON snapshot is used to restore one active game. The message table's key and index support future independent transcript lookup and provide groundwork for multiplayer event replay. FastAPI currently sends streaming status/delta events to the browser over HTTP; the database stores completed utterances and is not currently a live pub/sub channel for clients.
 
 The table is private for now. Although displayed dialogue is public to the player, associating it with private pitch/session state requires room membership and authorization rules before rows can safely be exposed to other clients.
+
+## Session expiration and cleanup
+
+`game_session.updatedAt` (SQL name `updated_at`) is the last successful session-save time and the existing optimistic-write version. A session expires when that timestamp is **more than two hours old**. This is an inactivity timeout based on saved gameplay, not a maximum age measured from `created_at`. A recent save preserves a session even if the game was created much earlier.
+
+The private `session_cleanup_schedule` table adds one maintenance row:
+
+| Field | SpacetimeDB type | Purpose |
+| --- | --- | --- |
+| `scheduledId` | `u64`, auto-increment primary key | The singleton cleanup schedule uses ID 1. |
+| `scheduledAt` | `ScheduleAt` | A recurring interval of 20 minutes, or 1,200,000,000 microseconds. |
+
+The exported `sweepExpiredSessions` reducer is bound to that table using SpacetimeDB's [scheduled-reducer mechanism](https://spacetimedb.com/docs/tables/schedule-tables/). It accepts scheduler invocations from the database identity and uses `ctx.timestamp` as the current time. Every sweep checks existing session timestamps and transactionally deletes each expired `game_session` row plus **all** associated `conversation_message` rows, including messages from previous pitches. Recently saved sessions and their messages remain. Invalid timestamps are retained rather than guessed to be expired.
+
+The 20-minute schedule means an abandoned session is normally removed on the next sweep after crossing the two-hour limit, approximately two hours to two hours twenty minutes after its last save. A busy/offline database can delay a sweep. Cleanup runs in SpacetimeDB independently of FastAPI and does not call Grok or CRS. Completed and unfinished sessions follow the same inactivity rule; there is no separate permanent scorecard archive.
+
+Saved actions such as accepted questions, offers, passes, reveals, and pitch advancement renew the timer through their session write. Reads, page refreshes, camera movement, and merely leaving the browser open do not renew it. A request to load a deleted session receives the existing API's session-not-found response. An in-flight stale write with a nonempty previous version cannot recreate a session that cleanup already deleted.
+
+New databases create the schedule through the module's `init` hook. Because `init` does not rerun when upgrading an existing database, `cleanupExpiredSessions` also installs the schedule if missing and performs an immediate sweep. Its fixed policy cannot be changed by passing a client cutoff. Run it manually with:
+
+```bash
+spacetime call credit-tank-state cleanup_expired_sessions \
+  --server maincloud --no-config --yes
+```
+
+Use the same database/server configured for FastAPI. Repeated calls keep one schedule row and safely find no additional work once expired sessions have been removed. `scripts/deploy-render.sh` calls this after publishing the database module. Publishing adds the schedule table while preserving existing session/message tables; it does not require clearing all data.
+
+Explicit reset deletion uses the same shared session/transcript removal helper immediately. The browser's Exit and Back to Lobby actions only clear the local session reference, and Run It Back creates another session, so those abandoned/completed records depend on expiration. Reset's background deletion request can also fail silently; scheduled cleanup eventually handles the retained row.
+
+The isolated integration checks start a temporary in-memory SpacetimeDB server and leave the configured cloud database untouched:
+
+```bash
+python3 spacetime/spacetimedb/tests/test_session_expiration.py
+```
+
+They cover stale/recent sessions, renewal, invalid timestamps, transcript cleanup across pitches, idempotent schedule installation, stale writes after deletion, and the real scheduler. They require the SpacetimeDB CLI and the module's installed npm dependencies.
 
 ## Reducers and consistency
 
@@ -108,6 +346,18 @@ If the version check fails, the reducer rejects the entire transaction. The sess
 
 - `upsertSession` is the session-only reducer retained in the module; the Python adapter currently uses `upsertSessionWithMessages`.
 - `deleteSession` deletes the session and its transcript rows. It uses the transcript index to find messages for that session.
+
+### Operational limits
+
+The Python adapter uses synchronous `httpx.post` directly from async FastAPI handlers, with a 2-second connection timeout and 6 seconds for the other HTTPX timeout categories. These calls can block that worker's event loop. The adapter has no thread offload, automatic retry, conflict merge, or whole-turn deadline. The in-process session lock and reducer version check solve different problems: the former serializes cooperating handlers in one process; the latter rejects stale saves across processes after any external generation has already occurred. A rejected save does not reverse a Grok request or its cost.
+
+For streamed questions, FastAPI saves the validated exchange before sending the SSE `complete` event. That response is delivered over a fetch POST rather than a database subscription. There are no resumable event IDs or automatic reconnect, and losing the completion event can leave the browser unsure whether the save committed. Database atomicity covers the reducer's snapshot/message writes, not a distributed transaction spanning Grok, FastAPI, and browser delivery. Memory mode provides no durable database commit. See [the technical answers](methodology.md#questions-derived-from-that-stack) for the inspected paths and verification limits. Pass/out actions use normal responses; after exit, all remaining generated exchanges are prepared before the state is applied and saved.
+
+## Access control boundary
+
+Private tables prevent ordinary client reads/subscriptions to hidden session data. The Python adapter sends a server-side database token, but the session-write/delete reducers do not check caller identity against the database owner, a session owner, or room membership. Their typed arguments and optimistic version checks are not substitutes for authorization to mutate a session. The scheduled sweep checks for the database identity; manual cleanup accepts no caller-selected cutoff and only removes sessions expired under the fixed server-time policy. The current FastAPI session routes also have no user-authentication dependency or session-owner check; a session ID identifies the target. CORS restricts browser origins, not all API callers.
+
+The code therefore does not establish end-to-end ownership enforcement merely by keeping tables private. Network exposure and any additional deployment controls have not been tested here. Browser-only reading/playback locks are likewise not enforced by the API; direct callers still face the backend's request, phase, balance, and offer checks. These are documented implementation boundaries, not changes to access policy.
 
 ## Multiplayer boundary
 

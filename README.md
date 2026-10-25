@@ -8,7 +8,7 @@ The project has three parts:
 - A FastAPI service that owns session rules, Grok dialogue, and underwriting.
 - A SpacetimeDB TypeScript module that stores session snapshots and ordered conversation messages.
 
-The current game is single-player. The conversation table and persisted session model are groundwork for multiplayer; authenticated rooms, shared client subscriptions, and membership checks are not implemented yet.
+The current game is single-player. The conversation table and persisted session model are groundwork for multiplayer; authenticated rooms, shared client subscriptions, and membership checks are not implemented yet. The score reflects a fixed teaching rubric, not demonstrated underwriting skill or a calibrated repayment prediction.
 
 ## What the game does
 
@@ -29,15 +29,21 @@ Grok gives the investors distinct, configured personalities. Kevin O'Leary's gam
 
 The backend sends one structured request per player question. That request produces the founder's answers and a short exchange between two investors, using the selected sharks' profile instructions. Investor lines are checked for length and numbers; the question line must end with a question mark. This keeps the voices distinct while avoiding a separate request and extra latency for every shark. Grok does not decide creditworthiness or whether a deal is accepted; deterministic Python rules handle those outcomes. The API key stays on the backend.
 
+Detailed personality prompts live in `SHARKS[].ai_profile.system_prompt` in `backend/app/catalog.py`. `backend/app/agents.py` combines the two selected personalities with shared instructions in the actual system message for question and pass/exit exchanges. Kevin emphasizes repayment and downside, Lori customer demand and fulfillment, and Mark execution and operating bottlenecks. The [personality guide](docs/shark-personalities.md) links the public research, explains the design interpretation, and describes the retained short-line rules and offline request checks.
+
 **Challenges encountered:** Separate calls for each shark made the first question feel slow and made the table seem to be waiting on several independent agents. The implementation now asks Grok once for the complete four-line exchange. Another mismatch was that the browser showed “responding” status labels while the conversation text did not appear until later. The client now re-renders the saved exchange as soon as the stream completes and plays it in sync with the speech bubbles. During Grok generation, it still shows progress labels rather than partial dialogue; timed playback starts after the full response is validated and saved.
 
 ### SpacetimeDB
 
-SpacetimeDB stores durable session snapshots and an indexed copy of the conversation. The `game_session` row holds the complete serialized game state; `conversation_message` holds one ordered row per message. Both are written in the same reducer transaction. The tables are private because the session snapshot contains hidden borrower profiles. The current FastAPI adapter restores the transcript from the session snapshot; it writes the message rows but does not query them. The browser receives dialogue over FastAPI server-sent events and does not connect to SpacetimeDB directly, so multiplayer rooms and live database subscriptions remain future work.
+SpacetimeDB stores durable session snapshots and an indexed copy of the conversation. The `game_session` row holds the complete serialized game state; `conversation_message` holds one ordered row per message. Both are written in the same reducer transaction. The tables are private because the session snapshot contains hidden borrower profiles. A private `session_cleanup_schedule` table runs database-side cleanup every 20 minutes: sessions whose last saved update is more than two hours old are deleted together with all their conversation rows. The current FastAPI adapter restores the transcript from the session snapshot; it writes the message rows but does not query them. The browser receives dialogue over FastAPI server-sent events and does not connect to SpacetimeDB directly, so multiplayer rooms and live database subscriptions remain future work.
 
 The field definitions, payload shape, indexes, reducer behavior, privacy choices, and rationale for each table are documented in [SpacetimeDB Data Model](docs/data-model.md).
 
+Session expiration is based on the last successful save, not the game's creation time. Questions, passes, offers, reveals, and pitch advancement renew it; reads, camera movement, and leaving a page open do not. Both unfinished and completed games expire under this policy. The next scheduled sweep normally removes an idle game between two hours and two hours twenty minutes after its last save. Reset requests immediate deletion, while Exit, Back to Lobby, and Run It Back leave previous records for expiration. See [cleanup behavior and testing](docs/data-model.md#session-expiration-and-cleanup).
+
 The founder-profile data path, five Cs rubric, benchmark, Decision Fit, and Underwriting Instinct formulas are documented in [Scorecard Logic](docs/scorecard-logic.md).
+
+For a focused, code-backed review of data origins, architecture, the five Cs, scoring, and gameplay, see [Methodology Questions and Answers](docs/methodology.md). Its retained questions are answered in place and distinguish inspected implementation, isolated offline checks, and evidence the repository does not establish. Detailed formulas and the current case inventory live in the scorecard guide.
 
 **Challenges encountered:** Local FastAPI startup requires a SpacetimeDB token, supplied by `spacetime login` or `SPACETIMEDB_TOKEN`. The backend does not ping the database during startup, so a missing or unpublished database appears later as a failed persistence request. Deployed FastAPI needs the owner token as a server secret. The tables are private because the session row contains hidden profiles and unrevealed outcomes. A separate conversation table provides an indexed path for future transcript queries; the current adapter restores the transcript from the session snapshot and does not read the message rows. This is persistence groundwork, not multiplayer synchronization: FastAPI remains the state owner and the browser does not subscribe to SpacetimeDB yet.
 
@@ -47,13 +53,15 @@ The npm package [`@crscreditapi/crs-calhacks-mcp-server`](https://www.npmjs.com/
 
 The deployed game does **not** call the MCP server or CRS APIs at runtime. MCP is the developer/agent interface; the FastAPI app has no MCP client dependency. CRS persona information was used to construct the bundled fictional founder profiles, so gameplay does not require CRS credentials and does not make credit-report requests.
 
+CRS is the external credit-data source, exposed through product APIs and MCP resources; this does not establish access to CRS's internal database tables or identify its database engine. SpacetimeDB separately stores the game's sessions and conversation records.
+
 The profile path is:
 
 1. MCP persona information provides synthetic examples that inform the founder credit profiles.
-2. `backend/app/catalog.py` pairs 19 playable synthetic credit personas with fictional founders, businesses, revenue, repayment capacity, owner equity, collateral, and market conditions. P14's deceased-file scenario is excluded, leaving 19 playable cases from the 20-persona pool.
-3. Bundled credit facts and business metrics provide the evidence used by Grok dialogue and the deterministic underwriting model.
+2. `backend/app/catalog.py` associates 19 playable persona IDs and synthetic founder identities with authored businesses, requests, revenue, repayment capacity, owner equity, collateral, and market conditions. P14 is not a playable case. These are fixed entries, not new financial profiles generated each time a presenter appears.
+3. Bundled credit facts and business metrics provide the evidence used by Grok dialogue and the deterministic underwriting model. The data-model guide lists [field origins and CRS-backed facts for every persona](docs/data-model.md#founder-field-origins). By project convention, borrower/scenario inputs without a directly available CRS source are labeled **AI synthesized**, including fixed financial inputs and local credit proxies. The guide traces those inputs into the risk score; this classification does not mean Grok generates the profile during gameplay.
 
-CRS supplies synthetic persona examples for the bundled catalog; the fictional business and five Cs teaching profile are curated locally. No real applicant data is used.
+CRS supplies synthetic persona examples for the bundled catalog; the fictional business and five Cs teaching profile are curated locally. In `backend/app/catalog.py`, `PROFILES` starts empty and all 19 playable cases pass through `_crs_presenter`; a session randomly selects 1–4 cases from that full list without replacement. P14, the deceased-file case, is excluded. Original report bodies, request IDs, bureau-model metadata, and a field-level import history are not retained in the repository, so the bundled values are not independently reconciled to source reports at runtime. No real applicant data is used.
 
 **Challenges encountered:** The MCP guide covers several CRS products, and the initial design added an optional direct sandbox-report pull during a pitch. That feature required credentials and could update the credit score mid-game, adding a second source of state for the underwriting decision. To keep the game simpler, the report panel, runtime connector, endpoint, and credential settings have been removed. CRS persona examples remain bundled as synthetic scenario facts; Grok phrases those supplied facts conversationally, and the backend rejects founder answers with numbers absent from the selected fact. That check does not prove every non-numeric claim is supported, so the prompt remains an important safeguard.
 
@@ -61,11 +69,15 @@ CRS supplies synthetic persona examples for the bundled catalog; the fictional b
 
 TypeScript and Vite build the browser client; Three.js creates the shrimp actors and studio from code-generated geometry, materials, and lights.
 
-**Challenges encountered:** The stage has appeared as a mostly empty color panel during layout changes, and some camera/UI arrangements obscured the environment or the speech bubbles. The scene was rebuilt toward a larger Shark Tank-inspired set, the investor shrimps were spaced around the player, and the camera now stays forward-facing with side-to-side drag limits. Door frames briefly looked like bars across the presenter's route; a thin cyan horizon line in the city-window texture can still be mistaken for one. An external shrimp model was tried and then reverted, so the current low-poly characters remain procedural. Long speech bubbles and a tall conversation panel also reduced readability and covered the set; the transcript now retains the full line while the bubble scrolls, and the wide conversation panel has a shorter height. Overlay text, live announcements, and reduced-motion behavior were refined alongside the scene.
+**Challenges encountered:** The stage has appeared as a mostly empty color panel during layout changes, and some camera/UI arrangements obscured the environment or the speech bubbles. The current camera supports limited dragging and speaker-following rather than a permanently locked view. Door frames briefly looked like bars across the presenter's route; a thin cyan horizon line in the city-window texture can still be mistaken for one. An external shrimp model was tried and then reverted, so the characters remain procedural. Long dialogue also obscured the set: the transcript keeps the full current-pitch text, while each 3D bubble shows the last four wrapped lines as text arrives. On desktop, the scrolling conversation is in the right rail, the summary panels are on the left, and the decision dock stays below. Reduced-motion, focus styles, labels, and live announcements exist; no completed accessibility audit is claimed.
 
-### Python, FastAPI, HTTPX, and Render
+### Python, FastAPI, Pydantic, HTTPX, and Render
 
 FastAPI owns session transitions and underwriting. HTTPX calls Grok from the server; the SpacetimeDB adapter persists game state. Render hosts the API and static frontend; `scripts/deploy-render.sh` publishes the SpacetimeDB module and triggers the existing Render services.
+
+FastAPI uses Pydantic for input validation. The request models in [`backend/app/main.py`](backend/app/main.py) define accepted fields, types, defaults, and limits for starting sessions, asking questions, and submitting decisions. Examples include 1–4 pitches per session, questions between 2 and 400 characters, and loan terms between 6 and 84 months. Invalid inputs receive an HTTP 422 validation response. The models allow Pydantic's default type conversions and ignore unknown fields; they are not configured for strict typing. Amount and rate are optional in the request model and required separately by the offer handler. Backend handlers also enforce phase, balance, and offer-eligibility rules. Passing these checks does not establish that a real loan is sound.
+
+The SpacetimeDB adapter currently makes synchronous HTTPX calls directly from async routes. Those database requests can block a worker's event loop and delay other requests or dialogue streams. Session locks are local to one process; the database's version check rejects stale saves across processes but does not serialize the preceding Grok generation. See [SpacetimeDB operational limits](docs/data-model.md#operational-limits).
 
 **Challenges encountered:** The root `.env` is intentionally ignored and is not present in a fresh clone, while Uvicorn resolves `--env-file` paths from the current directory. That caused the missing `../.env` startup error when setup was incomplete or run from the wrong folder. “Can't reach the game server” also occurred when Vite was running on port 5173 but FastAPI was not running on port 8000. Render also needs an exact `FRONTEND_ORIGINS` CORS value and `VITE_API_BASE` at frontend build time. A game-state bug made **I'm Out** end the session; the backend now records the player as out while allowing the other investors to finish the pitch and the player to review its result. The setup instructions below configure both processes, credentials, and the SpacetimeDB connection.
 
@@ -119,6 +131,13 @@ Requirements: Python 3.11+, Node.js 20.19+ or 22.12+, npm, the [SpacetimeDB CLI]
      --yes
    ```
 
+   New databases install the cleanup schedule automatically. After upgrading an existing database, run the following once to enable the schedule and immediately remove expired sessions. It is safe to rerun:
+
+   ```bash
+   spacetime call credit-tank-state cleanup_expired_sessions \
+     --server maincloud --no-config --yes
+   ```
+
    Use the same database name and server in `.env`. Do not publish to a different database and expect the existing sessions to appear there. If you do not have SpacetimeDB access and only need a temporary local run, set `SESSION_STORE=memory`; state then disappears when FastAPI restarts.
 
 4. Start FastAPI in one terminal. The `--env-file` path is relative to the current working directory, so run this from `backend/`:
@@ -151,11 +170,19 @@ Requirements: Python 3.11+, Node.js 20.19+ or 22.12+, npm, the [SpacetimeDB CLI]
 
 ## Dialogue and turn flow
 
+### Question routing and investor behavior
+
+Free-text questions use a case-insensitive substring keyword counter to select one of the five authored facts. Ties use topic-name ordering; an unmatched question gets a fixed unavailable-information response. This is not semantic question understanding. The investor follow-up topic is assigned by round: conditions, capacity, then collateral. The coverage chips record routed/discussed topics, not understanding or document sufficiency, and do not affect the score.
+
+Each Grok request writes multiple fictional voices rather than running independent investor agents. It receives public business context, the current question where applicable, supplied facts, persona instructions, and at most six selected recent dialogue messages. Previous player questions and offer/round events are excluded from that recent context. The complete hidden profile and calculated grade are not sent. Investor sentiment does not determine offers; fixed backend rules select the bidder and terms from the full assessment.
+
 ### Grok and response length
 
 The live provider is xAI Grok through the streaming Chat Completions API (`/v1/chat/completions`, `stream: true`). Claude is not used. The key is read by FastAPI from `GROK_API_KEY`. The default model is `grok-4.3` with reasoning disabled; model, reasoning effort, API base URL, and timeout can be set with the `GROK_*` variables in `.env.example`.
 
 One question request generates four short, structured lines: the founder answers the player, one investor asks a focused follow-up, the founder answers using another supplied fact, and a second investor reacts. Founder lines are limited to 30 words; investor questions and reactions are checked for 4–18 words, and numbers in investor lines are rejected. The prompt directs founder answers to use only the verified fact supplied for each line, and code rejects numbers not present in that fact; it does not semantically verify every non-numeric claim. Personas guide tone and business focus, while the model is instructed not to decide whether to accept a deal. Without a key, the game retains a scripted offline fallback; it is shown as offline mode rather than represented as live Grok.
+
+The request uses strict JSON Schema for the expected string fields and requests character limits; Python separately checks field names, types, word counts, numeric tokens, and the question's final `?`. It does not separately recheck character limits or the instruction that reactions contain one sentence. Each provider request sets `max_tokens: 420`. There is no automatic generation/validation retry, aggregate token or dollar budget, or per-user rate limiter. Failed turns can be retried without advancing the round, so the three-round cap alone does not bound total API spend.
 
 ### What players see while a question is answered
 
@@ -163,11 +190,21 @@ The question is added to the transcript immediately. While the API builds and va
 
 Each incoming line takes four seconds to reveal, followed by a two-second pause before the next line. The transcript follows the active line and retains the complete text; a 3D bubble appears above the current speaker. Reduced-motion mode displays the full transcript without timed playback. There is no standalone **Show All** control: during normal playback, offer, pass, and exit are disabled until the exchange finishes. In pitch review, **SHOW TRANSCRIPT & REVEAL DECISION** can reveal any remaining transcript and the founder's decision together.
 
+The browser reads SSE frames through a fetch POST, without automatic reconnection, event-ID replay, or cross-connection deduplication. FastAPI sends `complete` after saving the turn. If that event is lost, the browser cannot infer whether the save committed; stream cancellation does not roll back a database transaction. The reading/playback lock is a browser rule, not a server-enforced waiting period.
+
 ### Pitch decisions
 
-After the player asks one question in a round, that round must be closed with an offer, pass, or **I'm Out · Table Continues**. The exit action removes the player from bidding but does not terminate the session: the other investors can finish their discussion and make eligible offers.
+The player may offer, pass, or leave without asking. After one question, another question is blocked until a decision advances the round. Pass generates an additional three-line table exchange even if a question was already answered that round, and leaves a pending human offer active. A replacement offer withdraws the previous one; **I'm Out · Conversation Continues** withdraws the human's bids and lets the other investors finish. Pass/out requests use a normal response, so their generated exchanges arrive together after processing rather than as the question route's SSE stream.
 
-Closing a pitch moves it to a review phase. The transcript and offers stay visible; the founder's selection remains hidden until the player selects the reveal control. The result then shows whether the founder accepted the player's offer, chose another investor, or made no deal. The player can continue to the next pitch from the result screen.
+An eligible offer can close round 1; AI offers begin in round 2, and three rounds is a maximum rather than guaranteed investigation time. Human bids must fit the remaining balance and 78%–150% of the ask. Deal eligibility also requires the grade's minimum target rate and, for grade 4, a secured flag. This does not recompute repayments at the offered rate or verify collateral. The founder then ranks eligible offers by capped funding, rate above the opening quote, and royalty; term and security are absent from that preference. Full rules are in [Scorecard Logic](docs/scorecard-logic.md#offer-eligibility-and-founder-selection).
+
+Closing moves the pitch to review. The full current-pitch conversation remains available, but the public offer list filters out withdrawn/rejected offers rather than retaining every bid as a visible ledger. The `result` and final `scorecard` fields are withheld until reveal; accepted offer status and any human balance deduction already appear in review state, so outcome concealment is incomplete. After reveal, the result JSON also contains the risk grade even though the intermediate UI omits it. Advancing resets the active transcript; older conversation rows remain in SpacetimeDB but are not retrieved by the current app.
+
+### What the score means
+
+The engine assesses the complete hidden numeric profile regardless of the player's questions. It uses a fixed estimated payment of 3.4% of the original ask; the offered principal, rate, term, and royalties do not change that DSCR. Narrative warnings such as one-time revenue, low cash reserves, or an identity mismatch are not automatically translated into financial adjustments or mandatory review holds.
+
+Decision Fit mainly rewards the winning human rate's proximity to a fixed target, or applies outcome-based points when the human does not fund. Underwriting Instinct combines that with illustrative simple-interest P&L. Question quality and coverage are not scored. Four current benchmark amounts are below the API's minimum bid. Offline checks also produced a score of 94 for an immediate P08 offer without questions and 90 for passing P05 without questions. These are limitations of the current teaching mechanics, documented with exact calculations in [Scorecard Logic](docs/scorecard-logic.md#reproducible-offline-examples), not evidence of lending competence or measured returns.
 
 ## SpacetimeDB and multiplayer groundwork
 
@@ -232,6 +269,8 @@ The deploy script can trigger both existing Render services using deploy hooks. 
 
 Use `--api` or `--frontend` to deploy one service. The script does not create Render services or set their environment variables. See [Render's FastAPI guide](https://render.com/docs/deploy-fastapi), [Render Static Sites](https://render.com/docs/static-sites), and [Vite environment variables](https://vite.dev/guide/env-and-mode) for platform details.
 
+The frontend and database-module npm lockfiles record resolved JavaScript dependencies; the Python requirements use version ranges rather than a resolved lockfile. The helper prints the checkout SHA, but its deploy-hook POST does not explicitly select that SHA or verify the revisions actually served by Render. Confirm service branch/revision settings and the published database module when checking a release. The local version inventory in [TECH-01](docs/methodology.md#questions-derived-from-that-stack) is not an inventory of the deployed services.
+
 ## Configuration reference
 
 Use [.env.example](./.env.example) as the backend template and [frontend/.env.example](./frontend/.env.example) as the browser build template.
@@ -246,6 +285,8 @@ Use [.env.example](./.env.example) as the backend template and [frontend/.env.ex
 | `VITE_API_BASE` | Frontend build | Public base URL used for FastAPI requests. |
 
 The root `.gitignore` excludes local `.env*` files except checked-in `.env.example` templates, Python/Node dependencies, generated bundles, and SpacetimeDB's machine-local configuration.
+
+`GROK_BASE_URL` selects the Chat Completions base; a trailing `/responses` is normalized to `/chat/completions`, not used to switch API families. Grok connections time out after 10 seconds; `GROK_TIMEOUT_SECONDS` defaults to 3,600 seconds for the other HTTPX timeout categories. Database requests use a 2-second connection timeout and 6 seconds for the other categories. These are operation/inactivity limits, not a deadline for the entire turn. `/api/health` and `/api/config` report service responsiveness and selected modes; neither tests a Grok request or database read/write. The session does not record a full history of the active model, prompts, code revision, or resolved dependency versions.
 
 ## Code structure
 
@@ -274,7 +315,9 @@ The root `.gitignore` excludes local `.env*` files except checked-in `.env.examp
 │   ├── deploy-render.sh          Render deploy-hook workflow
 │   └── deploy-render.env.example Deploy-hook template (no live secrets)
 ├── docs/
-│   └── data-model.md             SpacetimeDB schemas and design rationale
+│   ├── data-model.md             SpacetimeDB schemas and design rationale
+│   ├── scorecard-logic.md        Founder profiles, five Cs rubric, scorecard formulas
+│   └── methodology.md            Focused questions and code-backed implementation answers
 ├── shark_tank_project_specs.md  Original project design brief
 ├── .env.example                 Backend environment template
 └── README.md                    Setup, deployment, architecture, and issue history
@@ -289,9 +332,12 @@ The root `.gitignore` excludes local `.env*` files except checked-in `.env.examp
 
 ## Project boundaries
 
+The focused [Methodology Questions and Answers](docs/methodology.md) explain the inspected data, financial methods, state, and gameplay. All retained questions have inline answers; missing evidence is identified explicitly. When an answer is added or revised there, the [documentation maintenance rule](docs/methodology.md#documentation-maintenance-for-methodology-answers) calls for checking and updating affected guides; it does not require unrelated README changes on other tasks.
+
 - Founder credit facts are based on synthetic CRS persona examples bundled with the app. Business revenue, collateral, owner equity, and outcomes are fictional teaching values; no live CRS report is pulled during gameplay.
 - The investor profiles are fictionalized teaching personas named after the canonical show investors; they are not official AI replicas or endorsements.
 - The five Cs calculation is a transparent game mechanic, not calibrated lending policy.
 - Prompts constrain Grok to supplied facts, and the backend rejects unsupported numbers in founder lines; deterministic Python rules handle underwriting and deal outcomes.
 - The benchmark is a local loan formula; the app makes no Coinbase or x402 calls.
 - The simulator is for fictional educational scenarios and does not make real credit decisions.
+- The API currently targets sessions by ID without user authentication or session-owner checks. CORS is a browser-origin restriction, not user authorization. Database tables are private, but reducers do not check caller identity or room membership. Additional deployed access controls have not been verified; see the [access control boundary](docs/data-model.md#access-control-boundary).
