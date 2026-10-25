@@ -415,7 +415,7 @@ export function createStage(initialHost: HTMLElement): Stage | null {
       context.fillText("THE", 512, 76);
       context.fillStyle = "#ffffff";
       context.font = "700 80px Arial";
-      context.fillText("CREDIT TANK", 512, 172);
+      context.fillText("SHRIMP TANK", 512, 172);
       context.fillStyle = "#c9e8f5";
       context.font = "600 23px Arial";
       context.fillText(company ? company.toUpperCase() : "THE UNDERWRITING STUDIO", 512, 255, 790);
@@ -726,6 +726,7 @@ export function createStage(initialHost: HTMLElement): Stage | null {
     const introStageCamera = new THREE.Vector3(-1.1, 2.35, -13.25);
     const introSeatLookStart = new THREE.Vector3(0, 2.0, -10.7);
     const introDuration = 8000;
+    const maxViewYaw = Math.PI * 0.46;
     const look = new THREE.Vector3();
     const normalLook = seatTarget.clone();
     const speakerLook = new THREE.Vector3();
@@ -793,7 +794,7 @@ export function createStage(initialHost: HTMLElement): Stage | null {
         manualView = true;
         event.preventDefault();
       }
-      viewYaw = THREE.MathUtils.euclideanModulo(viewYaw - deltaX * 0.0055 + Math.PI, Math.PI * 2) - Math.PI;
+      viewYaw = THREE.MathUtils.clamp(viewYaw - deltaX * 0.0055, -maxViewYaw, maxViewYaw);
       viewPitch = THREE.MathUtils.clamp(viewPitch + deltaY * 0.004, -0.9, 0.9);
       lastPointerX = event.clientX;
       lastPointerY = event.clientY;

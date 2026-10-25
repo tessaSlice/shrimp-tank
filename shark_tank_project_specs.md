@@ -1,5 +1,7 @@
 # Shark Tank: B2B Loan Risk Simulator & Financial Literacy Engine
 
+> **Status:** This is the original hackathon proposal, not a description of the current implementation. Some architecture and integrations below remained plans or have changed. For the code-verified setup and behavior, see [README.md](README.md); for the current SpacetimeDB schema, see [docs/data-model.md](docs/data-model.md). The current app uses FastAPI as the game-rule and session-transition owner, persists private session snapshots and transcript rows through SpacetimeDB, uses xAI's streaming Chat Completions API, calls the CRS sandbox directly at runtime (the CRS MCP server is a development reference), and does not use Coinbase x402 or browser-side SpacetimeDB multiplayer subscriptions.
+
 ## 1. Executive Summary & Core Vision
 
 **Shark Tank: B2B Loan Risk Simulator** is an interactive 3D financial literacy and underwriting game designed for a 24-hour hackathon build. The application places the player in the center seat of the iconic "Shark Tank" set, where they evaluate B2B loan applications alongside AI-driven co-investor "Sharks."
@@ -8,7 +10,7 @@
 
 Standard financial literacy games often rely on dry dashboards or idealized equity models that fail to teach real-world risk assessment. Furthermore, venture equity valuation is subjective and difficult to evaluate algorithmically in a game setting.
 
-* **The Pivot:** Instead of pure equity pitches, applicants (powered by real CRS credit data) pitch for **commercial lines of credit and loans**.
+* **The Pivot:** Instead of pure equity pitches, applicants (using synthetic CRS sandbox credit-report data) pitch for **commercial lines of credit and loans**.
 * **The Goal:** To teach players how to interrogate entrepreneurs, uncover hidden credit risks, and evaluate commercial loan offers against standardized B2B underwriting metrics (The 5 Cs of Credit).
 
 ---
@@ -36,7 +38,6 @@ The game draws up to four pitches per session from 19 playable CRS synthetic cre
 ### 3.2 The Investigation & Dialogue Mechanics
 
 * **Hidden Information Model:** Pitchers do **not** disclose their raw credit metrics in their opening elevator pitch. The player and AI Sharks must interrogate the pitcher through dialogue to uncover hidden debt, payment history, and credit scores.
-* **The Player Scratchpad:** The UI "Notes" panel is a manual input pad for the player. CRS data is deliberately *not* auto-populated here to force active investigation rather than passive reading.
 * **3-Round Bidding Cap:** To prevent infinite LLM counter-offer loops, a pitch is strictly capped at 3 rounds of dialogue/bidding. By Round 3, the pitcher must accept the best active offer or walk away empty-handed.
 
 ### 3.3 UI & 3D Render Architecture
@@ -157,7 +158,7 @@ The application operates as a deterministic, phase-based state machine driven by
 * **Database & Game Engine:** SpacetimeDB (TypeScript Module). Acts as the real-time multiplayer ledger for room states and offer histories.
 * **LLM Client:** `httpx.AsyncClient` calls the xAI Responses API with structured JSON output for each dialogue turn.
 
-### 5.2 SpacetimeDB Schema Definitions
+### 5.2 Original Proposed SpacetimeDB Schema (Not the Current Schema)
 
 ```typescript
 // GameSession Table
@@ -208,7 +209,7 @@ def parse_crs_data(raw_crs_json: dict) -> str:
     debt = raw_crs_json.get("total_debt", 0)
     derogatory = raw_crs_json.get("derogatory_marks", 0)
     payment_history = raw_crs_json.get("on_time_payment_pct", 100)
-    
+
     return (
         f"APPLICANT HIDDEN FINANCIAL PROFILE: Credit Score: {score} | "
         f"Total Debt: ${debt:,.2f} | Derogatory Marks: {derogatory} | "
@@ -223,7 +224,7 @@ To enforce character persona while ensuring mathematical accuracy in offers, sys
 ```markdown
 You are a venture investor ("Shark") on a TV show evaluating a commercial loan pitch.
 
-PERSONALITY: Highly analytical, focused strictly on debt coverage and cash flow. 
+PERSONALITY: Highly analytical, focused strictly on debt coverage and cash flow.
 WORD LIMIT: Maximum 30 words in dialogue. Punchy, direct, conversational.
 
 INSTRUCTIONS:
@@ -270,16 +271,16 @@ $$\text{Risk Grade} = f(\text{Character}, \text{Capacity}, \text{Capital}, \text
 ## 9. Implementation Roadmap (Final 24 Hours)
 
 - [x] **Hours 0–4:** Core specs finalized, sponsor track alignment, architecture design.
-- [ ] **Hours 4–10:** 
+- [ ] **Hours 4–10:**
   - Build SpacetimeDB TypeScript module (`GameSession`, `OfferLedger`).
   - Set up FastAPI project with the xAI Responses API client and CRS parsing helper.
-- [ ] **Hours 10–16:** 
+- [ ] **Hours 10–16:**
   - Build Three.js stage layout, model loader, and locked perspective camera state.
   - Implement 2D HTML overlay UI with 180 WPM reading timer logic.
-- [ ] **Hours 16–20:** 
+- [ ] **Hours 16–20:**
   - Connect turn-management state machine between FastAPI, SpacetimeDB, and Three.js.
   - Integrate prompt injection wrappers and API timeout fallback arrays.
-- [ ] **Hours 20–22:** 
+- [ ] **Hours 20–22:**
   - Implement post-game scoring calculation engine and Coinbase benchmark integration.
   - Polish scorecard UI.
 - [ ] **Hours 22–24:** Demo testing, rate-limit stress testing, presentation submission.

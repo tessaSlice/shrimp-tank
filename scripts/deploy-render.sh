@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy the already-pushed current Git commit to the Credit Tank Render services.
+# Deploy the already-pushed current Git commit to the Shrimp Tank Render services.
 #
 # One-time setup:
 #   1. Create the Render API Web Service and frontend Static Site as described in README.md.

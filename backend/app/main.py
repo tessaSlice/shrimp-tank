@@ -23,7 +23,6 @@ from .agents import (
     table_exchange,
 )
 from .catalog import PITCHES, SHARKS, get_pitch
-from .crs import CRSNotConfigured, CRSRequestError, CRSSandboxClient
 from .main_types import GameSession
 from .spacetime_store import SpacetimeSessionStore
 from .store import InMemorySessionStore, SessionStore
@@ -37,7 +36,7 @@ def _cors_origins() -> list[str]:
     return [*local_origins, *production_origins]
 
 
-app = FastAPI(title="The Credit Tank API", version="0.1.0", description="A fictional, rules-based B2B loan negotiation teaching simulator.")
+app = FastAPI(title="Shrimp Tank API", version="0.1.0", description="A fictional, rules-based B2B loan negotiation teaching simulator.")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
@@ -67,7 +66,6 @@ class SubmitDecision(BaseModel):
 
 SESSIONS: SessionStore = SpacetimeSessionStore.from_environment() or InMemorySessionStore()
 SESSION_BACKEND = "spacetimedb" if isinstance(SESSIONS, SpacetimeSessionStore) else "in-memory"
-CRS_CLIENT = CRSSandboxClient()
 CAPITAL_BY_DIFFICULTY = {"easy": 350_000, "medium": 250_000, "hard": 175_000}
 TARGET_RATES = GRADE_RATES
 ACTIVE_SESSION: ContextVar[GameSession | None] = ContextVar("active_session", default=None)
@@ -108,8 +106,6 @@ def _public_state(session: GameSession) -> dict:
         "purpose": pitch["purpose"],
         "opening": pitch["opening"],
         "public_revenue": pitch["public_revenue"],
-        "sandbox_persona": pitch["sandbox_persona"],
-        "crs_report": pitch.get("crs_report"),
     }
     active_offers = [
         _public_offer(offer)
@@ -135,7 +131,6 @@ def _public_state(session: GameSession) -> dict:
         "human_out": session.human_out,
         "result": session.result,
         "scorecard": session.scorecard if session.phase != "pitch_review" else None,
-        "crs_available": bool(os.getenv("CRS_USERNAME") and os.getenv("CRS_PASSWORD")),
         "ai_mode": active_provider(),
     }
 
@@ -317,13 +312,12 @@ def _finish_pitch(session: GameSession, assessment: dict, benchmark_data: dict, 
 
 @app.get("/api/health")
 async def health() -> dict:
-    return {"ok": True, "service": "the-credit-tank", "database": SESSION_BACKEND}
+    return {"ok": True, "service": "shrimp-tank", "database": SESSION_BACKEND}
 
 
 @app.get("/api/config")
 async def config() -> dict:
     return {
-        "crs_available": bool(os.getenv("CRS_USERNAME") and os.getenv("CRS_PASSWORD")),
         "ai_provider": active_provider(),
         "database": SESSION_BACKEND,
     }
@@ -581,26 +575,6 @@ async def reveal_decision(session_id: str) -> dict:
     session.pending_result = None
     session.phase = "pitch_result"
     return _public_state(session)
-
-
-@app.post("/api/sessions/{session_id}/crs-report")
-@_serialize_session
-async def pull_crs_report(session_id: str) -> dict:
-    session = _get_session(session_id)
-    if session.phase != "investigate":
-        raise HTTPException(status_code=409, detail="A CRS sandbox report can only be attached during an active pitch.")
-    try:
-        report = await CRS_CLIENT.pull_persona(session.pitch["sandbox_persona"])
-    except CRSNotConfigured as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except CRSRequestError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    if report["score"] is not None:
-        session.pitch["profile"]["credit_score"] = int(report["score"])
-        session.pitch["facts"]["character"] = f"The CRS sandbox returned a {report['score']} {report['model'] or 'credit'} score. This is the synthetic CalHacks test persona, not a real applicant."
-    report["assessment"] = assess(session.pitch["profile"], session.pitch["ask_amount"])
-    session.pitch["crs_report"] = report
-    return {"report": report, "state": _public_state(session)}
 
 
 @app.get("/api/sessions/{session_id}/scorecard")
