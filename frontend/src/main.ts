@@ -232,7 +232,8 @@ function playDialogue(messages: Message[]) {
     article.classList.add("speaking");
     body.textContent = "";
     const sharkIndex = game?.sharks.findIndex((shark: any) => shark.name === message.speaker) ?? -1;
-    stage?.setSpeaker(message.kind === "round" ? null : sharkIndex >= 0 ? sharkIndex + 1 : 0, "");
+    const speakerFirstName = message.speaker.trim().split(/\s+/)[0] || message.speaker;
+    stage?.setSpeaker(message.kind === "round" ? null : sharkIndex >= 0 ? sharkIndex + 1 : 0, "", speakerFirstName);
     announce(`${message.speaker} is speaking.`);
     transcript?.scrollTo({ top: transcript.scrollHeight, behavior: "smooth" });
     const glyphs = Array.from(message.text);
@@ -674,7 +675,7 @@ function renderPitchResult() {
   const accepted = result?.outcome === "deal";
   ui.innerHTML = `
     <div class="result-shell"><header class="game-topbar"><a class="brand compact" href="#"><span class="brand-mark">ST</span><span>SHRIMP TANK<small>UNDERWRITING LAB</small></span></a><div class="session-progress"><div class="progress-label"><span>PITCH RESOLVED</span><b>${String(game.pitch_index).padStart(2, "0")} <i>/</i> ${String(game.total_pitches).padStart(2, "0")}</b></div><div class="progress-track"><span style="width:${game.pitch_index / game.total_pitches * 100}%"></span></div></div><div class="capital-pill"><span>AVAILABLE CAPITAL</span><b>${money(game.balance)}</b></div></header>
-    <section class="result-card"><p class="eyebrow"><span class="eyebrow-line"></span>${accepted ? "THE FOUNDER HAS A DEAL" : "THE FOUNDER IS WALKING"}</p><div class="result-symbol ${accepted ? "accepted" : "passed"}">${accepted ? "✓" : "—"}</div><h1>${accepted ? "Deal closed." : "No deal."}</h1><p class="result-company">${esc(game.pitch.company)} <span>·</span> ${esc(game.pitch.archetype)}</p><div class="result-terms"><span>${esc(result.message)}</span><small>RISK GRADE ${result.grade} · ${esc(result.risk_label).toUpperCase()}</small></div><div class="result-actions"><button type="button" id="advance" class="primary-button">${game.pitch_index < game.total_pitches ? "NEXT PITCH" : "VIEW SCORECARD"}<span class="button-arrow">↗</span></button></div><p class="result-note">The detailed five Cs assessment is revealed in your final scorecard.</p></section><footer class="game-footer"><span>FICTIONAL BUSINESS CASE</span><span>NO REAL CREDIT DECISIONS</span></footer></div><div id="toast" class="toast" role="status" aria-live="polite"></div>`;
+    <section class="result-card"><div class="result-symbol ${accepted ? "accepted" : "passed"}">${accepted ? "✓" : "—"}</div><h1>${accepted ? "Deal closed." : "No deal."}</h1><p class="result-company">${esc(game.pitch.company)} <span>·</span> ${esc(game.pitch.archetype)}</p><div class="result-terms"><span>${esc(result.message)}</span></div><div class="result-actions"><button type="button" id="advance" class="primary-button">${game.pitch_index < game.total_pitches ? "NEXT PITCH" : "VIEW SCORECARD"}<span class="button-arrow">↗</span></button></div></section><footer class="game-footer"><span>FICTIONAL BUSINESS CASE</span><span>NO REAL CREDIT DECISIONS</span></footer></div><div id="toast" class="toast" role="status" aria-live="polite"></div>`;
   document.querySelector<HTMLButtonElement>("#advance")!.addEventListener("click", advance);
 }
 

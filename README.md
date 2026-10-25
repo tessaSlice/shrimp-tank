@@ -37,6 +37,8 @@ SpacetimeDB stores durable session snapshots and an indexed copy of the conversa
 
 The field definitions, payload shape, indexes, reducer behavior, privacy choices, and rationale for each table are documented in [SpacetimeDB Data Model](docs/data-model.md).
 
+The founder-profile data path, five Cs rubric, benchmark, Decision Fit, and Underwriting Instinct formulas are documented in [Scorecard Logic](docs/scorecard-logic.md).
+
 **Challenges encountered:** Local FastAPI startup requires a SpacetimeDB token, supplied by `spacetime login` or `SPACETIMEDB_TOKEN`. The backend does not ping the database during startup, so a missing or unpublished database appears later as a failed persistence request. Deployed FastAPI needs the owner token as a server secret. The tables are private because the session row contains hidden profiles and unrevealed outcomes. A separate conversation table provides an indexed path for future transcript queries; the current adapter restores the transcript from the session snapshot and does not read the message rows. This is persistence groundwork, not multiplayer synchronization: FastAPI remains the state owner and the browser does not subscribe to SpacetimeDB yet.
 
 ### CRS CalHacks MCP server and CRS sandbox

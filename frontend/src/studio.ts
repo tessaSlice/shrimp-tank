@@ -3,7 +3,7 @@ import * as THREE from "three";
 export type Stage = {
   setPitch: (archetype: string, company?: string) => void;
   mount: (host: HTMLElement) => void;
-  setSpeaker: (index: number | null, text?: string) => void;
+  setSpeaker: (index: number | null, text?: string, speakerName?: string) => void;
   updateSpeech: (text: string) => void;
   intro: (onComplete?: () => void, onShotChange?: (shot: number) => void) => void;
   skipIntro: () => void;
@@ -16,6 +16,8 @@ export function createStage(initialHost: HTMLElement): Stage | null {
     scene.background = new THREE.Color(0x061123);
     scene.fog = new THREE.Fog(0x0a1830, 26, 52);
     const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 70);
+    // Widen only the seated game view to approximate the scene scale at 75% browser zoom.
+    const seatedViewFov = 61;
     const seatPosition = new THREE.Vector3(0, 1.72, 6.65);
     const cameraLookDownSlope = Math.tan(THREE.MathUtils.degToRad(7));
     const tiltLookTargetDown = (target: THREE.Vector3) => {
@@ -621,12 +623,12 @@ export function createStage(initialHost: HTMLElement): Stage | null {
       scene.add(sprite);
       return { sprite, context, texture };
     };
-    const drawBubble = (bubble: SpeechBubble, text: string) => {
+    const drawBubble = (bubble: SpeechBubble, text: string, speakerName = "") => {
       const context = bubble.context;
       const words = (text.trim() || "…").split(/\s+/);
       const maxTextWidth = 510;
       const lineHeight = 39;
-      const firstBaseline = 72;
+      const firstBaseline = speakerName ? 88 : 72;
       context.font = "600 27px Arial";
       const lines: string[] = [];
       let line = "";
@@ -679,6 +681,13 @@ export function createStage(initialHost: HTMLElement): Stage | null {
       context.fillStyle = "#092039";
       context.font = "600 27px Arial";
       context.textAlign = "left";
+      if (speakerName) {
+        context.fillStyle = "#146b9b";
+        context.font = "700 23px Arial";
+        context.fillText(`${speakerName}:`, 58, 58);
+        context.fillStyle = "#092039";
+        context.font = "600 27px Arial";
+      }
       visibleLines.forEach((wrappedLine, index) => context.fillText(wrappedLine, 58, firstBaseline + index * lineHeight));
       bubble.texture.needsUpdate = true;
     };
@@ -695,6 +704,7 @@ export function createStage(initialHost: HTMLElement): Stage | null {
       return createBubble(point, index === 0 ? [4.6, 2.1] : [3.2, 1.5]);
     });
     const activeBubble: { current: SpeechBubble | null } = { current: null };
+    let activeBubbleSpeaker = "";
 
     const actorLights = actors.map((actor, index) => {
       const light = new THREE.PointLight(index === 0 ? 0xffffce : 0xf8be92, 0, 5, 2);
@@ -747,7 +757,7 @@ export function createStage(initialHost: HTMLElement): Stage | null {
       hallRightDoor.rotation.y = 0;
       manualView = false;
       camera.position.copy(seatPosition);
-      camera.fov = 48;
+      camera.fov = seatedViewFov;
       camera.updateProjectionMatrix();
       normalLook.copy(seatTarget);
       camera.lookAt(seatTarget);
@@ -857,13 +867,13 @@ export function createStage(initialHost: HTMLElement): Stage | null {
         if (t >= 1) finishIntro();
       } else if (manualView) {
         camera.position.copy(seatPosition);
-        camera.fov += (48 - camera.fov) * 0.14;
+        camera.fov += (seatedViewFov - camera.fov) * 0.14;
         camera.updateProjectionMatrix();
         direction.set(Math.sin(viewYaw) * Math.cos(viewPitch), Math.sin(viewPitch), -Math.cos(viewYaw) * Math.cos(viewPitch));
         camera.lookAt(seatPosition.clone().add(direction));
       } else {
         camera.position.copy(seatPosition);
-        const targetFov = selectedSpeaker !== null && selectedSpeaker > 0 ? 56 : 48;
+        const targetFov = selectedSpeaker !== null && selectedSpeaker > 0 ? 56 : seatedViewFov;
         camera.fov += (targetFov - camera.fov) * 0.14;
         camera.updateProjectionMatrix();
         if (selectedSpeaker !== null && selectedSpeaker > 0 && actors[selectedSpeaker]) {
@@ -932,20 +942,22 @@ export function createStage(initialHost: HTMLElement): Stage | null {
         drawSign(company);
       },
       mount,
-      setSpeaker(index, text = "") {
+      setSpeaker(index, text = "", speakerName = "") {
         speechBubbles.forEach((bubble) => { bubble.sprite.visible = false; });
         activeBubble.current = null;
+        activeBubbleSpeaker = "";
         if (index !== null && index >= 0) manualView = false;
         selectedSpeaker = index !== null && index >= 0 ? index : null;
         if (index === null || index < 0) return;
         const bubble = speechBubbles[index];
         if (!bubble) return;
-        drawBubble(bubble, text);
+        activeBubbleSpeaker = speakerName;
+        drawBubble(bubble, text, activeBubbleSpeaker);
         bubble.sprite.visible = true;
         activeBubble.current = bubble;
       },
       updateSpeech(text) {
-        if (activeBubble.current) drawBubble(activeBubble.current, text);
+        if (activeBubble.current) drawBubble(activeBubble.current, text, activeBubbleSpeaker);
       },
       intro(onComplete, onShotChange) {
         introducing = false;
