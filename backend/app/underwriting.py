@@ -107,15 +107,29 @@ def offer_is_affordable(offer: dict, ask_amount: int) -> bool:
     )
 
 
-def score_session(pitches: list[dict], starting_capital: int) -> dict:
+def offer_matches_request(pitch: dict, offer: dict) -> bool:
+    """Founder acceptance preference, independent of the investor's risk benchmark."""
+    return (
+        offer["amount"] >= pitch["ask_amount"]
+        and offer["rate"] <= pitch["opening_rate"]
+        and offer.get("royalty", 0) == 0
+    )
+
+
+def score_session(pitches: list[dict], starting_capital: int, player_id: str = "human_user") -> dict:
     rows = []
     total_expected_profit = 0.0
     earned = 0
     for item in pitches:
         assessment = item["assessment"]
         grade = assessment["grade"]
-        player_offer = item.get("player_offer")
-        accepted_by_player = item.get("winner") == "human_user"
+        player_offers = item.get("player_offers") or {}
+        player_offer = player_offers.get(player_id)
+        if player_offer is None and player_id == "human_user":
+            player_offer = item.get("player_offer")
+        accepted_by_player = item.get("winner") == player_id
+        if not player_offers and player_id == "human_user":
+            accepted_by_player = item.get("winner") == "human_user"
         ideal = item["benchmark"]
         if accepted_by_player and player_offer:
             principal = player_offer["amount"]
@@ -127,7 +141,9 @@ def score_session(pitches: list[dict], starting_capital: int) -> dict:
             pricing_gap = abs(rate - (ideal["rate"] or rate))
             decision_score = max(0, 100 - int(pricing_gap * 8) - (20 if grade == 5 else 0))
             feedback = "You priced the risk close to the benchmark." if pricing_gap <= 2 else "Compare your rate with the benchmark and the borrower's repayment capacity."
-            if grade == 4 and rate < (assessment["target_rate"] or 0):
+            if grade == 5:
+                feedback = "The founder accepted your terms, but the benchmark would walk away from this risk."
+            elif grade == 4 and rate < (assessment["target_rate"] or 0):
                 decision_score = max(0, decision_score - 25)
                 feedback = "The rate did not fully compensate for the simulated risk."
         else:
@@ -152,6 +168,7 @@ def score_session(pitches: list[dict], starting_capital: int) -> dict:
             "risk_label": assessment["label"],
             "decision": item.get("decision", "no_deal"),
             "winner": item.get("winner"),
+            "winner_name": item.get("winner_name"),
             "player_offer": player_offer,
             "benchmark": ideal,
             "assessment": assessment,

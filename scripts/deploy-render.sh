@@ -86,7 +86,7 @@ publish_spacetime() {
   command -v spacetime >/dev/null 2>&1 || fail "Missing required command: spacetime"
 
   if [[ "$dry_run" == true ]]; then
-    printf 'Would publish SpacetimeDB module to %s on %s.\n' "$database_name" "$server_name"
+    printf 'Would publish SpacetimeDB module to %s on %s and enable session expiration.\n' "$database_name" "$server_name"
     return
   fi
 
@@ -96,6 +96,8 @@ publish_spacetime() {
     --server "$server_name" \
     --no-config \
     --yes
+  spacetime call "$database_name" cleanup_expired_sessions \
+    --server "$server_name" --no-config --yes
 }
 
 if [[ -n "$(git status --porcelain)" ]]; then
