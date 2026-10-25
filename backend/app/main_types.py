@@ -21,11 +21,20 @@ class GameSession:
     disclosures: list[str] = field(default_factory=list)
     offers: list[dict] = field(default_factory=list)
     completed: list[dict] = field(default_factory=list)
+    # Fictional investor portfolios and paper-trade history; never linked to wallets.
+    investor_portfolios: list[dict] = field(default_factory=list)
     human_out: bool = False
     question_asked: bool = False
+    # Round number of the newest pending bid. Zero means this pitch has had no offer yet.
+    last_new_offer_round: int = 0
     pending_result: dict | None = None
     result: dict | None = None
     scorecard: dict | None = None
+    # Browser participants share the room transcript but each owns a separate
+    # investor balance, exit state, and scorecard.
+    players: list[dict] = field(default_factory=list)
+    current_player_id: str = "human_user"
+    player_scorecards: dict[str, dict] = field(default_factory=dict)
     persistence_version: str = ""
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)

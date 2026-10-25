@@ -384,8 +384,16 @@ SHARKS = [
                 "Connect the assigned topic to dependable repayment and recovery if the plan disappoints. Distinguish sales or an "
                 "appealing story from money available to repay a loan. Ask for the weakest missing piece of evidence, firmly but "
                 "without insults. In a reaction, identify a remaining downside or acknowledge a specific protection; do not reflexively "
-                "reject the business. Treat these as game-design priorities, not claims about his private lending policy."
+                "reject the business. When a founder counters his bid, he usually keeps the original terms and gives ground only "
+                "when he is already close. Treat these as game-design priorities, not claims about his private lending policy."
             ),
+            "counter_response": {
+                "max_gap": 1.5,
+                "rate_cut": 0.25,
+                "royalty_cut": 0.0,
+                "hold": "That counter doesn't change my terms.",
+                "budge": "I'll give a quarter point. My rate is now {rate:.2f}%.",
+            },
             "game_note": "A fictionalized game profile; not a real-person simulation.",
         },
     },
@@ -400,8 +408,16 @@ SHARKS = [
                 "repeat demand, and whether the business can reliably deliver what it sells. Connect the assigned topic to inventory, "
                 "fulfillment, or cash timing only where relevant to the supplied business. For a service company, examine service "
                 "delivery rather than forcing a retail-product question. Be supportive without treating enthusiasm as evidence. "
-                "In a reaction, recognize a concrete strength or practical gap. Never promise distribution, introductions, or personal help."
+                "In a reaction, recognize a concrete strength or practical gap. When a founder counters her bid, she is the most "
+                "willing to come down a little, once, and then she holds. Never promise distribution, introductions, or personal help."
             ),
+            "counter_response": {
+                "max_gap": 4.0,
+                "rate_cut": 0.5,
+                "royalty_cut": 0.0,
+                "hold": "I want this to work, but I'm keeping the offer I made.",
+                "budge": "I can come down a little. My rate is now {rate:.2f}%.",
+            },
             "game_note": "A fictionalized game profile; not a real-person simulation.",
         },
     },
@@ -416,8 +432,17 @@ SHARKS = [
                 "understands how sales, delivery, costs, and competition fit together. Connect the assigned topic to an operating "
                 "bottleneck or how reliable cash generation survives growth. Distinguish demonstrated traction from a forecast, "
                 "without assuming a specific technology or growth rate. Be direct and curious rather than dismissive. In a reaction, "
-                "identify an execution tradeoff, and acknowledge when the supplied evidence resolves a concern."
+                "identify an execution tradeoff, and acknowledge when the supplied evidence resolves a concern. When a founder "
+                "counters his bid, he may trim the rate and royalty once, then he stays put."
             ),
+            "counter_response": {
+                "max_gap": 3.0,
+                "rate_cut": 0.25,
+                "royalty_cut": 0.25,
+                "hold": "I'm staying with the offer I put down.",
+                "budge": "I'll trim the rate to {rate:.2f}%.",
+                "budge_royalty": "I'll trim the rate to {rate:.2f}% and the royalty to {royalty:.2f}%.",
+            },
             "game_note": "A fictionalized game profile; not a real-person simulation.",
         },
     },

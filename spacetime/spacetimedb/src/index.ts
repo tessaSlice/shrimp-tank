@@ -1,4 +1,8 @@
 import { schema, table, t, type InferSchema, type ReducerCtx } from "spacetimedb/server";
+import { ScheduleAt } from "spacetimedb";
+
+const SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+const CLEANUP_INTERVAL_MICROS = 20n * 60n * 1_000_000n;
 
 // Session payloads remain private: they include hidden fictional borrower
 // profiles and must only be read by the FastAPI service using the database
@@ -46,7 +50,15 @@ const conversationMessage = table(
   },
 );
 
-const spacetimedb = schema({ gameSession, conversationMessage });
+const sessionCleanupSchedule = table(
+  { name: "session_cleanup_schedule" },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+  },
+);
+
+const spacetimedb = schema({ gameSession, conversationMessage, sessionCleanupSchedule });
 export default spacetimedb;
 
 type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
@@ -92,6 +104,60 @@ function upsertConversationMessages(ctx: Ctx, messages: ConversationMessageRow[]
   }
 }
 
+function deleteStoredSession(ctx: Ctx, sessionId: string): number {
+  let messagesDeleted = 0;
+  for (const message of [...ctx.db.conversationMessage.by_session_pitch_sequence.filter(sessionId)]) {
+    ctx.db.conversationMessage.messageId.delete(message.messageId);
+    messagesDeleted += 1;
+  }
+  ctx.db.gameSession.sessionId.delete(sessionId);
+  return messagesDeleted;
+}
+
+function ensureCleanupSchedule(ctx: Ctx) {
+  if (!ctx.db.sessionCleanupSchedule.scheduledId.find(1n)) {
+    ctx.db.sessionCleanupSchedule.insert({
+      scheduledId: 1n,
+      scheduledAt: ScheduleAt.interval(CLEANUP_INTERVAL_MICROS),
+    });
+  }
+}
+
+function removeExpiredSessions(ctx: Ctx) {
+  const cutoffMs = Number(ctx.timestamp.microsSinceUnixEpoch / 1000n) - SESSION_IDLE_TIMEOUT_MS;
+  let sessionsDeleted = 0;
+  let messagesDeleted = 0;
+  for (const session of [...ctx.db.gameSession.iter()]) {
+    const lastUpdatedMs = Date.parse(session.updatedAt);
+    // Preserve malformed timestamps rather than guessing whether a session is stale.
+    if (!Number.isFinite(lastUpdatedMs) || lastUpdatedMs >= cutoffMs) continue;
+    messagesDeleted += deleteStoredSession(ctx, session.sessionId);
+    sessionsDeleted += 1;
+  }
+  console.log(`Session cleanup removed ${sessionsDeleted} sessions and ${messagesDeleted} messages.`);
+}
+
+export const init = spacetimedb.init((ctx) => {
+  ensureCleanupSchedule(ctx);
+});
+
+// Also enables the schedule when upgrading an existing database (init does not rerun).
+export const cleanupExpiredSessions = spacetimedb.reducer((ctx) => {
+  ensureCleanupSchedule(ctx);
+  removeExpiredSessions(ctx);
+});
+
+export const sweepExpiredSessions = spacetimedb.reducer(
+  { onSchedule: sessionCleanupSchedule },
+  { timer: sessionCleanupSchedule.rowType },
+  (ctx) => {
+    if (!ctx.sender.equals(ctx.databaseIdentity)) {
+      throw new Error("Session sweeps must be invoked by the database scheduler.");
+    }
+    removeExpiredSessions(ctx);
+  },
+);
+
 export const upsertSession = spacetimedb.reducer(
   { sessionId: t.string(), stateJson: t.string(), updatedAt: t.string(), expectedUpdatedAt: t.string() },
   (ctx, { sessionId, stateJson, updatedAt, expectedUpdatedAt }) => {
@@ -117,9 +183,6 @@ export const upsertSessionWithMessages = spacetimedb.reducer(
 export const deleteSession = spacetimedb.reducer(
   { sessionId: t.string() },
   (ctx, { sessionId }) => {
-    ctx.db.gameSession.sessionId.delete(sessionId);
-    for (const message of ctx.db.conversationMessage.by_session_pitch_sequence.filter(sessionId)) {
-      ctx.db.conversationMessage.messageId.delete(message.messageId);
-    }
+    deleteStoredSession(ctx, sessionId);
   },
 );

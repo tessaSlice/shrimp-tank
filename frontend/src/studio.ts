@@ -5,7 +5,7 @@ export type Stage = {
   mount: (host: HTMLElement) => void;
   setSpeaker: (index: number | null, text?: string, speakerName?: string) => void;
   updateSpeech: (text: string) => void;
-  intro: (onComplete?: () => void, onShotChange?: (shot: number) => void) => void;
+  intro: (onComplete?: () => void, onShotChange?: (shot: number) => void, options?: { showcase?: boolean }) => void;
   skipIntro: () => void;
   dispose: () => void;
 };
@@ -42,6 +42,7 @@ export function createStage(initialHost: HTMLElement): Stage | null {
     const metal = new THREE.MeshStandardMaterial({ color: 0x798998, metalness: 0.56, roughness: 0.38, flatShading: true });
     const darkMetal = new THREE.MeshStandardMaterial({ color: 0x111b28, metalness: 0.48, roughness: 0.42, flatShading: true });
     const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x081425, metalness: 0.12, roughness: 0.78, flatShading: true });
+    const hallWallMaterial = new THREE.MeshStandardMaterial({ color: 0x26384b, metalness: 0.08, roughness: 0.82, flatShading: true });
     const walnut = new THREE.MeshStandardMaterial({ color: 0x4b261b, metalness: 0.04, roughness: 0.46, flatShading: true });
     const doorInset = new THREE.MeshStandardMaterial({ color: 0x352018, metalness: 0.03, roughness: 0.58, flatShading: true });
     const whiteLeather = new THREE.MeshStandardMaterial({ color: 0xdde8ed, metalness: 0.04, roughness: 0.39, flatShading: true });
@@ -86,7 +87,6 @@ export function createStage(initialHost: HTMLElement): Stage | null {
     woodTexture.wrapT = THREE.RepeatWrapping;
     woodTexture.repeat.set(4, 3);
     const floorMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, map: woodTexture, metalness: 0.08, roughness: 0.62, flatShading: true });
-    const stageMaterial = new THREE.MeshStandardMaterial({ color: 0xb8875f, map: woodTexture, metalness: 0.12, roughness: 0.48, flatShading: true });
     const gold = new THREE.MeshStandardMaterial({ color: 0xbc8d51, metalness: 0.68, roughness: 0.31, flatShading: true });
     const goldGlow = new THREE.MeshStandardMaterial({ color: 0xffd99a, emissive: 0xd58a37, emissiveIntensity: 1.15, metalness: 0.1, roughness: 0.42, flatShading: true });
     const limeGlow = new THREE.MeshStandardMaterial({ color: 0x62d9ff, emissive: 0x127cb8, emissiveIntensity: 1.3, metalness: 0.16, roughness: 0.34, flatShading: true });
@@ -110,23 +110,28 @@ export function createStage(initialHost: HTMLElement): Stage | null {
     warmFill.position.set(-5.4, 4.8, 0.5);
     scene.add(warmFill);
 
-    // A television pitch set: blue city glow, dark gloss floor, warm timber and a presentation runway.
+    // A television pitch set: blue city glow, timber flooring and a flush presentation area.
     const hallHalfWidth = 3.8;
     const hallWidth = hallHalfWidth * 2;
     const rearWallHalfWidth = 14.5;
     const rearSideWidth = rearWallHalfWidth - hallHalfWidth;
     const rearSideCenter = (rearWallHalfWidth + hallHalfWidth) / 2;
-    const addWoodDoorLeaf = (parent: THREE.Object3D, side: -1 | 1) => {
+    const addWoodDoorLeaf = (parent: THREE.Object3D, side: -1 | 1, height = 4.1) => {
       const leafWidth = hallHalfWidth;
       const centerX = side * leafWidth / 2;
-      box(parent, [leafWidth, 4.1, 0.16], [centerX, 2.08, 0], walnut, true);
-      box(parent, [leafWidth - 0.86, 1.25, 0.045], [centerX, 3.12, 0.105], doorInset, true);
-      box(parent, [leafWidth - 0.86, 1.0, 0.045], [centerX, 1.28, 0.105], doorInset, true);
-      box(parent, [0.07, 4.04, 0.2], [side * 0.1, 2.08, 0.1], gold);
-      box(parent, [0.07, 4.04, 0.2], [side * (leafWidth - 0.1), 2.08, 0.1], gold);
-      box(parent, [leafWidth - 0.16, 0.07, 0.2], [centerX, 0.14, 0.1], gold);
-      box(parent, [leafWidth - 0.16, 0.07, 0.2], [centerX, 4.02, 0.1], gold);
-      box(parent, [0.08, 0.48, 0.18], [side * (leafWidth - 0.33), 2.08, 0.2], goldGlow);
+      const verticalScale = height / 4.1;
+      const y = (value: number) => value * verticalScale;
+      box(parent, [leafWidth, height, 0.16], [centerX, height / 2, 0], walnut);
+      for (const face of [-1, 1]) {
+        const panelZ = face * 0.105;
+        const trimZ = face * 0.1;
+        box(parent, [leafWidth - 0.86, y(1.25), 0.045], [centerX, y(3.12), panelZ], doorInset);
+        box(parent, [leafWidth - 0.86, y(1.0), 0.045], [centerX, y(1.28), panelZ], doorInset);
+        box(parent, [0.07, height - 0.06, 0.2], [side * 0.1, height / 2, trimZ], gold);
+        box(parent, [0.07, height - 0.06, 0.2], [side * (leafWidth - 0.1), height / 2, trimZ], gold);
+        box(parent, [leafWidth - 0.16, 0.07, 0.2], [centerX, y(4.02), trimZ], gold);
+        box(parent, [0.08, y(0.48), 0.18], [side * (leafWidth - 0.33), height / 2, face * 0.2], goldGlow);
+      }
     };
     box(scene, [48, 0.16, 50], [0, -0.16, -1], floorMaterial);
     box(scene, [rearSideWidth, 9, 0.55], [-rearSideCenter, 4.35, -11.55], wallMaterial);
@@ -334,16 +339,17 @@ export function createStage(initialHost: HTMLElement): Stage | null {
     scene.add(arch);
     const innerArch = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(archPoints.map((point) => new THREE.Vector3(point.x * 0.92, point.y * 0.92, point.z + 0.07))), 80, 0.036, 8), limeGlow);
     scene.add(innerArch);
-    box(scene, [hallWidth, 0.1, 0.26], [0, 4.35, -10.83], goldGlow);
-    box(scene, [0.1, 4.4, 0.23], [-hallHalfWidth, 2.18, -10.82], goldGlow);
-    box(scene, [0.1, 4.4, 0.23], [hallHalfWidth, 2.18, -10.82], goldGlow);
+    box(scene, [hallWidth, 0.1, 0.26], [0, 4.03, -10.83], goldGlow);
+    box(scene, [0.1, 4.08, 0.23], [-hallHalfWidth, 2.04, -10.82], goldGlow);
+    box(scene, [0.1, 4.08, 0.23], [hallHalfWidth, 2.04, -10.82], goldGlow);
+    box(scene, [hallWidth, 1.37, 0.24], [0, 4.765, -10.98], hallWallMaterial);
     const leftDoor = new THREE.Group();
     const rightDoor = new THREE.Group();
     leftDoor.position.set(-hallHalfWidth, 0, -10.65);
     rightDoor.position.set(hallHalfWidth, 0, -10.65);
     scene.add(leftDoor, rightDoor);
-    addWoodDoorLeaf(leftDoor, 1);
-    addWoodDoorLeaf(rightDoor, -1);
+    addWoodDoorLeaf(leftDoor, 1, 4.08);
+    addWoodDoorLeaf(rightDoor, -1, 4.08);
 
     // The backstage corridor leads to a second entrance behind the stage doors.
     const hallStartZ = -10.92;
@@ -351,14 +357,12 @@ export function createStage(initialHost: HTMLElement): Stage | null {
     const hallLength = hallStartZ - hallEndZ;
     const hallCenterZ = (hallStartZ + hallEndZ) / 2;
     const vestibuleCenterZ = -21.42;
-    box(scene, [0.18, 5.45, hallLength], [-hallHalfWidth, 2.72, hallCenterZ], wallMaterial);
-    box(scene, [0.18, 5.45, hallLength], [hallHalfWidth, 2.72, hallCenterZ], wallMaterial);
+    box(scene, [0.18, 5.45, hallLength], [-hallHalfWidth, 2.72, hallCenterZ], hallWallMaterial);
+    box(scene, [0.18, 5.45, hallLength], [hallHalfWidth, 2.72, hallCenterZ], hallWallMaterial);
     box(scene, [hallWidth, 0.18, hallLength], [0, 5.38, hallCenterZ], darkMetal);
-    box(scene, [hallWidth - 0.4, 0.04, hallLength - 0.15], [0, -0.045, hallCenterZ], stageMaterial);
-    box(scene, [0.18, 5.45, 5], [-hallHalfWidth, 2.72, vestibuleCenterZ], wallMaterial);
-    box(scene, [0.18, 5.45, 5], [hallHalfWidth, 2.72, vestibuleCenterZ], wallMaterial);
+    box(scene, [0.18, 5.45, 5], [-hallHalfWidth, 2.72, vestibuleCenterZ], hallWallMaterial);
+    box(scene, [0.18, 5.45, 5], [hallHalfWidth, 2.72, vestibuleCenterZ], hallWallMaterial);
     box(scene, [hallWidth, 0.18, 5], [0, 5.38, vestibuleCenterZ], darkMetal);
-    box(scene, [hallWidth - 0.4, 0.16, 5], [0, -0.16, vestibuleCenterZ], floorMaterial);
     for (const side of [-1, 1]) {
       box(scene, [0.055, 0.045, hallLength - 0.3], [side * (hallHalfWidth - 0.32), 0.07, hallCenterZ], limeGlow);
       for (const z of [-12.0, -14.5, -17.0]) {
@@ -367,9 +371,15 @@ export function createStage(initialHost: HTMLElement): Stage | null {
       }
     }
     for (const z of [-12.4, -15.1, -17.6]) {
-      const hallLight = new THREE.PointLight(0xffc981, 13, 5.2, 1.7);
-      hallLight.position.set(0, 4.85, z);
+      box(scene, [1.0, 0.04, 0.34], [0, 5.25, z], goldGlow);
+      const hallLight = new THREE.PointLight(0xffd5a2, 48, 8, 1.8);
+      hallLight.position.set(0, 4.9, z);
       scene.add(hallLight);
+    }
+    for (const [x, z] of [[2.35, -20.7], [-2.35, -12.0]]) {
+      const hallFill = new THREE.PointLight(0x8ac9ec, 27, 8, 1.8);
+      hallFill.position.set(x, 3.6, z);
+      scene.add(hallFill);
     }
 
     const backstageWallZ = -19.03;
@@ -386,8 +396,8 @@ export function createStage(initialHost: HTMLElement): Stage | null {
     hallLeftDoor.position.set(-hallHalfWidth, 0, -18.86);
     hallRightDoor.position.set(hallHalfWidth, 0, -18.86);
     scene.add(hallLeftDoor, hallRightDoor);
-    addWoodDoorLeaf(hallLeftDoor, 1);
-    addWoodDoorLeaf(hallRightDoor, -1);
+    addWoodDoorLeaf(hallLeftDoor, 1, 4.08);
+    addWoodDoorLeaf(hallRightDoor, -1, 4.08);
 
     const signCanvas = document.createElement("canvas");
     signCanvas.width = 1024;
@@ -409,43 +419,46 @@ export function createStage(initialHost: HTMLElement): Stage | null {
       context.strokeStyle = "#76d5fa";
       context.lineWidth = 3;
       context.strokeRect(18, 18, 988, 308);
-      context.strokeStyle = "#d5a25c";
-      context.lineWidth = 6;
-      context.beginPath();
-      context.moveTo(92, 85);
-      context.lineTo(187, 85);
-      context.moveTo(837, 85);
-      context.lineTo(932, 85);
-      context.stroke();
-      context.textAlign = "center";
-      context.fillStyle = "#9ee6ff";
-      context.font = "700 30px Arial";
-      context.fillText("THE", 512, 76);
-      context.fillStyle = "#ffffff";
-      context.font = "700 80px Arial";
-      context.fillText("SHRIMP TANK", 512, 172);
-      context.fillStyle = "#c9e8f5";
-      context.font = "600 23px Arial";
-      context.fillText(company ? company.toUpperCase() : "THE UNDERWRITING STUDIO", 512, 255, 790);
+      const name = (company?.trim() || "Shrimp Tank").toUpperCase();
+      if (name) {
+        const maxTextWidth = 864;
+        const baseFontSize = 88;
+        context.font = `700 ${baseFontSize}px Arial`;
+        let lines = [name];
+        if (context.measureText(name).width > maxTextWidth) {
+          const words = name.split(/\s+/);
+          if (words.length > 1) {
+            let widestLine = Infinity;
+            for (let split = 1; split < words.length; split++) {
+              const candidate = [words.slice(0, split).join(" "), words.slice(split).join(" ")];
+              const width = Math.max(...candidate.map((line) => context.measureText(line).width));
+              if (width < widestLine) {
+                widestLine = width;
+                lines = candidate;
+              }
+            }
+          }
+        }
+        const widestLine = Math.max(...lines.map((line) => context.measureText(line).width));
+        const fontSize = Math.min(baseFontSize, Math.floor(baseFontSize * maxTextWidth / widestLine));
+        context.font = `700 ${fontSize}px Arial`;
+        context.fillStyle = "#ffffff";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        lines.forEach((line, index) => context.fillText(line, 512, lines.length === 1 ? 172 : 124 + index * 96));
+      }
       signTexture.needsUpdate = true;
     };
     drawSign();
 
-    // Layered blue presentation pad, slim runway, and warm brass edge at the investor side.
-    box(scene, [3.2, 0.2, 4.8], [0, 0.06, -8.35], walnut, true);
-    box(scene, [3.1, 0.06, 4.62], [0, 0.17, -8.35], stageMaterial, true);
-    box(scene, [12.0, 0.38, 7.0], [0, 0.15, -4.45], stageMaterial, true);
-    box(scene, [12.15, 0.08, 0.1], [0, 0.39, -0.9], goldGlow);
+    // Keep the performance area flush with the room floor so no deck edge reads
+    // as a threshold through the stage doors. Floor lights mark the stage area.
     for (const side of [-1, 1]) {
-      box(scene, [0.085, 0.06, 6.95], [side * 6.0, 0.39, -4.45], limeGlow);
-      box(scene, [0.05, 0.05, 4.68], [side * 1.58, 0.22, -8.35], limeGlow);
+      box(scene, [0.085, 0.012, 6.95], [side * 6.0, -0.074, -4.45], limeGlow);
     }
-    box(scene, [10.0, 0.19, 0.7], [0, 0.05, -0.42], darkMetal);
-    box(scene, [9.75, 0.09, 0.68], [0, -0.02, 0.01], darkMetal);
-    box(scene, [10.05, 0.055, 0.08], [0, 0.15, -0.08], goldGlow);
     const centerRing = new THREE.Mesh(new THREE.RingGeometry(0.75, 0.8, 8), new THREE.MeshBasicMaterial({ color: 0x6dd8ff, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }));
     centerRing.rotation.x = -Math.PI / 2;
-    centerRing.position.set(0, 0.395, -4.45);
+    centerRing.position.set(0, -0.075, -4.45);
     scene.add(centerRing);
 
     const spotlights: THREE.SpotLight[] = [];
@@ -738,10 +751,14 @@ export function createStage(initialHost: HTMLElement): Stage | null {
     let introCompleteCallback: (() => void) | null = null;
     let introShotCallback: ((shot: number) => void) | null = null;
     let activeIntroShot = -1;
-    const introHallCamera = new THREE.Vector3(2.8, 2.35, -14.9);
-    const introStageCamera = new THREE.Vector3(-1.1, 2.35, -13.25);
+    let showcaseIntro = false;
+    const introHallCamera = new THREE.Vector3(2.8, 2.35, -13.9);
+    const introStageCamera = new THREE.Vector3(-2.9, 2.35, -15.9);
     const introSeatLookStart = new THREE.Vector3(0, 2.0, -10.7);
+    const introSweepLook = new THREE.Vector3();
     const introDuration = 8000;
+    const showcaseDuration = 13000;
+    const showcaseChoreographyDuration = 10000;
     const maxViewYaw = Math.PI * 0.46;
     const look = new THREE.Vector3();
     const normalLook = seatTarget.clone();
@@ -765,6 +782,7 @@ export function createStage(initialHost: HTMLElement): Stage | null {
       introCompleteCallback = null;
       introShotCallback = null;
       activeIntroShot = -1;
+      showcaseIntro = false;
       onComplete?.();
     };
     const resize = () => {
@@ -825,46 +843,80 @@ export function createStage(initialHost: HTMLElement): Stage | null {
       frame = requestAnimationFrame(animate);
       if (document.hidden) return;
       if (introducing) {
-        const t = THREE.MathUtils.clamp((time - introStart) / introDuration, 0, 1);
-        const shot = t < 0.33 ? 0 : t < 0.88 ? 1 : t < 0.95 ? 2 : 3;
-        if (shot !== activeIntroShot) {
-          activeIntroShot = shot;
-          camera.fov = shot === 1 ? 66 : 48;
+        const elapsed = time - introStart;
+        const choreographyDuration = showcaseIntro ? showcaseChoreographyDuration : introDuration;
+        const t = THREE.MathUtils.clamp(elapsed / choreographyDuration, 0, 1);
+        const shotBreaks = showcaseIntro ? [0.26, 0.49, 0.72, 0.94] : [0.33, 0.88, 0.95];
+        const shot = shotBreaks.findIndex((boundary) => t < boundary);
+        const resolvedShot = shot < 0 ? shotBreaks.length : shot;
+        if (resolvedShot !== activeIntroShot) {
+          activeIntroShot = resolvedShot;
+          camera.fov = showcaseIntro
+            ? resolvedShot === 1 ? 66 : resolvedShot === 3 ? 68 : resolvedShot >= 2 ? seatedViewFov : 48
+            : resolvedShot === 1 ? 66 : 48;
           camera.updateProjectionMatrix();
-          introShotCallback?.(shot);
+          introShotCallback?.(resolvedShot);
         }
-        if (shot === 0) {
+        if (resolvedShot === 0) {
           camera.position.copy(introHallCamera);
           camera.lookAt(0, 2.0, -19.1);
-        } else if (shot === 1) {
+        } else if (resolvedShot === 1) {
           camera.position.copy(introStageCamera);
           camera.lookAt(0, 2.0, -5.8);
+        } else if (showcaseIntro && resolvedShot === 3) {
+          const sweep = THREE.MathUtils.smoothstep(t, 0.72, 0.94);
+          camera.position.set(
+            THREE.MathUtils.lerp(-7.8, 7.8, sweep),
+            5.8 + Math.sin(sweep * Math.PI) * 0.32,
+            10.8 + Math.sin(sweep * Math.PI) * 0.7,
+          );
+          introSweepLook.set(
+            THREE.MathUtils.lerp(-1.0, 1.0, sweep),
+            2.1 + Math.sin(sweep * Math.PI) * 0.18,
+            -5.4,
+          );
+          camera.lookAt(introSweepLook);
         } else {
           camera.position.copy(seatPosition);
-          const seatedProgress = THREE.MathUtils.smoothstep(t, 0.72, 1);
+          const seatedStart = showcaseIntro ? resolvedShot === 2 ? 0.49 : 0.94 : 0.72;
+          const seatedEnd = showcaseIntro ? resolvedShot === 2 ? 0.72 : 1 : 1;
+          const seatedProgress = THREE.MathUtils.smoothstep(t, seatedStart, seatedEnd);
           look.lerpVectors(introSeatLookStart, seatTarget, seatedProgress);
           camera.lookAt(look);
         }
 
-        const entranceWalk = THREE.MathUtils.smoothstep(t, 0.08, 0.3);
-        const hallwayWalk = THREE.MathUtils.smoothstep(t, 0.34, 0.65);
-        const stageWalk = THREE.MathUtils.smoothstep(t, 0.65, 0.89);
-        if (t < 0.08) founder.group.position.z = -21.45;
-        else if (t < 0.3) founder.group.position.z = THREE.MathUtils.lerp(-21.45, -17.75, entranceWalk);
-        else if (t < 0.34) founder.group.position.z = -17.75;
-        else if (t < 0.65) founder.group.position.z = THREE.MathUtils.lerp(-17.75, -11.15, hallwayWalk);
+        const entranceStart = showcaseIntro ? 0.07 : 0.08;
+        const entranceEnd = showcaseIntro ? 0.25 : 0.30;
+        const hallwayStart = showcaseIntro ? 0.27 : 0.34;
+        const hallwayEnd = showcaseIntro ? 0.47 : 0.65;
+        const stageStart = showcaseIntro ? 0.50 : 0.65;
+        const stageEnd = showcaseIntro ? 0.72 : 0.89;
+        const entranceWalk = THREE.MathUtils.smoothstep(t, entranceStart, entranceEnd);
+        const hallwayWalk = THREE.MathUtils.smoothstep(t, hallwayStart, hallwayEnd);
+        const stageWalk = THREE.MathUtils.smoothstep(t, stageStart, stageEnd);
+        if (t < entranceStart) founder.group.position.z = -21.45;
+        else if (t < entranceEnd) founder.group.position.z = THREE.MathUtils.lerp(-21.45, -17.75, entranceWalk);
+        else if (t < hallwayStart) founder.group.position.z = -17.75;
+        else if (t < hallwayEnd) founder.group.position.z = THREE.MathUtils.lerp(-17.75, -11.15, hallwayWalk);
+        else if (t < stageStart) founder.group.position.z = -11.15;
         else founder.group.position.z = THREE.MathUtils.lerp(-11.15, -4.42, stageWalk);
-        const walking = (t > 0.08 && t < 0.3) || (t > 0.34 && t < 1);
+        const walking = (t > entranceStart && t < entranceEnd)
+          || (t > hallwayStart && t < hallwayEnd)
+          || (t > stageStart && t < stageEnd);
         const stride = walking ? 0.2 : 0.025;
         founder.legs.forEach((leg, index) => { leg.rotation.z = Math.sin(time * 0.016 + index * Math.PI) * stride; });
         founder.eyes.rotation.y = Math.sin(time * 0.0012) * 0.045;
-        const entranceDoors = THREE.MathUtils.smoothstep(t, 0.02, 0.08) * (1 - THREE.MathUtils.smoothstep(t, 0.3, 0.36));
-        const stageDoors = THREE.MathUtils.smoothstep(t, 0.57, 0.65) * (1 - THREE.MathUtils.smoothstep(t, 0.93, 1));
+        const entranceDoors = showcaseIntro
+          ? THREE.MathUtils.smoothstep(t, 0.03, 0.08) * (1 - THREE.MathUtils.smoothstep(t, 0.22, 0.28))
+          : THREE.MathUtils.smoothstep(t, 0.02, 0.08) * (1 - THREE.MathUtils.smoothstep(t, 0.30, 0.36));
+        const stageDoors = showcaseIntro
+          ? THREE.MathUtils.smoothstep(t, 0.44, 0.50) * (1 - THREE.MathUtils.smoothstep(t, 0.68, 0.76))
+          : THREE.MathUtils.smoothstep(t, 0.57, 0.65) * (1 - THREE.MathUtils.smoothstep(t, 0.93, 1));
         hallLeftDoor.rotation.y = entranceDoors * 1.08;
         hallRightDoor.rotation.y = -entranceDoors * 1.08;
-        leftDoor.rotation.y = -stageDoors * 1.08;
-        rightDoor.rotation.y = stageDoors * 1.08;
-        if (t >= 1) finishIntro();
+        leftDoor.rotation.y = -stageDoors * (Math.PI / 2);
+        rightDoor.rotation.y = stageDoors * (Math.PI / 2);
+        if (elapsed >= (showcaseIntro ? showcaseDuration : introDuration)) finishIntro();
       } else if (manualView) {
         camera.position.copy(seatPosition);
         camera.fov += (seatedViewFov - camera.fov) * 0.14;
@@ -901,7 +953,7 @@ export function createStage(initialHost: HTMLElement): Stage | null {
         actor.legs.forEach((leg, legIndex) => { leg.rotation.z = Math.sin(time * 0.001 + legIndex * Math.PI + index) * 0.014; });
       });
       actorLights.forEach((light, index) => {
-        const target = selectedSpeaker === index ? 12 : 0;
+        const target = index === 0 && introducing ? 20 : selectedSpeaker === index ? 12 : 0;
         light.intensity += (target - light.intensity) * 0.12;
       });
       spotlights[1].intensity = 155 + Math.sin(time * 0.0015) * 6;
@@ -959,7 +1011,7 @@ export function createStage(initialHost: HTMLElement): Stage | null {
       updateSpeech(text) {
         if (activeBubble.current) drawBubble(activeBubble.current, text, activeBubbleSpeaker);
       },
-      intro(onComplete, onShotChange) {
+      intro(onComplete, onShotChange, options) {
         introducing = false;
         manualView = false;
         dragging = false;
@@ -968,6 +1020,7 @@ export function createStage(initialHost: HTMLElement): Stage | null {
         selectedSpeaker = null;
         introCompleteCallback = onComplete || null;
         introShotCallback = onShotChange || null;
+        showcaseIntro = Boolean(options?.showcase);
         activeIntroShot = -1;
         camera.position.copy(seatPosition);
         camera.fov = 48;
@@ -981,13 +1034,14 @@ export function createStage(initialHost: HTMLElement): Stage | null {
         hallLeftDoor.rotation.y = 0;
         hallRightDoor.rotation.y = 0;
         if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-          activeIntroShot = 2;
-          introShotCallback?.(2);
+          activeIntroShot = showcaseIntro ? 4 : 2;
+          introShotCallback?.(activeIntroShot);
           founder.group.position.z = -4.42;
           introCompleteCallback?.();
           introCompleteCallback = null;
           introShotCallback = null;
           activeIntroShot = -1;
+          showcaseIntro = false;
           return;
         }
         introStart = performance.now();
