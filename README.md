@@ -1,5 +1,9 @@
 # Shrimp Tank
 
+Devpost link: https://devpost.com/software/shrimp-tank
+
+<img alt="Shrimp Tank UI" src="ShrimpTank.png" />
+
 Shrimp Tank is a fictional B2B loan negotiation game. Players join a shared pitch as separate investor seats, question the founder, review the other investors' discussion, and decide whether to offer a loan, pass, or leave the pitch. A five Cs rubric explains the rules-based outcome. The game is educational and does not make real credit decisions.
 
 The project has three parts:
